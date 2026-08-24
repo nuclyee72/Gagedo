@@ -96,7 +96,9 @@ const toolbar = new Toolbar(toolbarEl, {
     const rect = viewportEl.getBoundingClientRect();
     const { x, y } = camera.screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
     const jitter = () => (Math.random() - 0.5) * 40;
-    tree.addTextBox({ x: x + jitter(), y: y + jitter() });
+    // 텍스트 박스는 (x,y)가 왼쪽 위 모서리라, 화면 중앙에 "보이도록" 만들려면 기본 크기(글자
+    // 20px 기준 대략 200×46px)의 절반만큼 왼쪽/위로 당겨서 놓아야 한다.
+    tree.addTextBox({ x: x + jitter() - 100, y: y + jitter() - 23 });
   },
   zoomIn: () => zoomAtCenter(1.25),
   zoomOut: () => zoomAtCenter(1 / 1.25),

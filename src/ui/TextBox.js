@@ -37,10 +37,15 @@ export function attachTextBoxDrag(el, { getScale, onDragStart, onMove, onMoveEnd
   });
 }
 
-/** 오른쪽 아래 모서리 핸들로 글자 크기를 조절한다(박스 폭은 em 단위라 글자와 같이 늘어난다). */
-export function attachTextBoxResize(el, { getScale, onResize, onResizeEnd }) {
+/**
+ * 오른쪽 아래 모서리 핸들로 글자 크기를 조절한다(박스 폭은 em 단위라 글자와 같이 늘어난다).
+ * onDragMove의 dx는 "지난 이동 이후"의 증분(누적값이 아님)이므로, 드래그 시작 시점을
+ * onResizeStart로 알려줘서 호출한 쪽이 직접 누적하게 한다(사람 카드 드래그와 같은 패턴).
+ */
+export function attachTextBoxResize(el, { getScale, onResizeStart, onResize, onResizeEnd }) {
   const handle = el.querySelector(".text-box-resize");
   return new DragController(handle, {
+    onDragStart: () => onResizeStart && onResizeStart(),
     onDragMove: (dx) => onResize(dx / getScale()),
     onDragEnd: () => onResizeEnd && onResizeEnd(),
   });

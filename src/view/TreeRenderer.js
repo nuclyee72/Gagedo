@@ -259,10 +259,19 @@ export class TreeRenderer {
       onClick: () => this.onTextBoxClick && this.onTextBoxClick(box.id),
     });
 
+    // dx는 매 이동마다 "증분"으로 들어오므로(누적값이 아님), 사람 카드의 rawX/rawY와 똑같이
+    // 드래그 시작 시점의 값을 기준 삼아 직접 누적해야 한다 — 그러지 않고 매번 box.fontSize(원래
+    // 값, 드래그 중엔 안 바뀜)에 그때그때의 작은 증분만 더하면, 실제 이동 거리와 무관하게 매
+    // 프레임 거의 같은 값 근처에서 오락가락해서 부들부들 떨리는 것처럼 보이는 버그가 있었다.
+    let rawFontSize = box.fontSize;
     const resizeDrag = attachTextBoxResize(el, {
       getScale: () => this.camera.scale,
+      onResizeStart: () => {
+        rawFontSize = box.fontSize;
+      },
       onResize: (dxWorld) => {
-        const next = Math.min(72, Math.max(10, Math.round(box.fontSize + dxWorld * 0.4)));
+        rawFontSize += dxWorld * 0.4;
+        const next = Math.min(72, Math.max(10, Math.round(rawFontSize)));
         el.querySelector(".text-box-content").style.fontSize = `${next}px`;
       },
       onResizeEnd: () => {

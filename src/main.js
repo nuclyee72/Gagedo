@@ -112,10 +112,25 @@ const toolbar = new Toolbar(toolbarEl, {
   },
 });
 
+// 사이드바(#inspector)는 top:0부터 시작하는 대신 툴바 실제 높이만큼 아래에서 시작해야 한다 —
+// 안 그러면 툴바/사이드바가 화면 오른쪽 위에서 서로 겹치는데, z-index로 어느 한쪽을 위로 두는
+// 순간 반대쪽의 그 자리에 있는 버튼(툴바의 내보내기/가져오기 또는 사이드바의 닫기 ×)이 클릭이
+// 안 먹는 문제가 생긴다(실제로 겪음). 툴바 높이는 반응형 레이아웃(모바일 등)에 따라 달라지므로
+// ResizeObserver로 실측해 CSS 변수로 넘긴다.
+const syncToolbarHeight = () => {
+  document.documentElement.style.setProperty("--toolbar-h", `${toolbarEl.getBoundingClientRect().height}px`);
+};
+new ResizeObserver(syncToolbarHeight).observe(toolbarEl);
+syncToolbarHeight();
+
 const THEME_KEY = "gagedo-theme";
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
   toolbar.setThemeIcon(theme === "dark");
+  // 모바일 브라우저의 상단 상태 표시줄(주소창 등) 색도 테마에 맞춘다 — index.html의 인라인
+  // 스크립트가 첫 페인트 전 초기값을 정하고, 여기서는 토글할 때마다 계속 맞춰준다.
+  const themeMeta = document.getElementById("theme-color-meta");
+  if (themeMeta) themeMeta.content = theme === "dark" ? "#1c2028" : "#ffffff";
   try { localStorage.setItem(THEME_KEY, theme); } catch { /* 저장 안 돼도(시크릿 모드 등) 화면 전환 자체는 되게 둔다 */ }
 }
 // index.html의 인라인 스크립트가 깜빡임 방지를 위해 이 스크립트보다 먼저 data-theme를 이미

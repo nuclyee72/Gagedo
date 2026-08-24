@@ -2,7 +2,11 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" id="theme-color-meta" content="#ffffff">
 <title>가계도 메이커</title>
 <link rel="stylesheet" href="style.css">
 <script>
@@ -13,6 +17,10 @@
       var stored = localStorage.getItem("gagedo-theme");
       var theme = stored || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       document.documentElement.setAttribute("data-theme", theme);
+      // 모바일 브라우저 상단 상태 표시줄 색도 처음부터 테마에 맞춰서(안 그러면 다크 모드에서도
+      // 잠깐 흰 상태줄이 보였다가 바뀐다) — 실제 값은 main.js의 applyTheme이 계속 관리한다.
+      var themeMeta = document.getElementById("theme-color-meta");
+      if (themeMeta) themeMeta.content = theme === "dark" ? "#1c2028" : "#ffffff";
     } catch (e) { /* localStorage 접근 불가(예: 완전 차단된 시크릿 모드)면 기본(라이트)으로 둔다 */ }
   })();
 </script>

@@ -53,10 +53,17 @@ html, body {
   font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   color: var(--text);
   background: var(--bg);
+  /* 모바일에서 캔버스를 팬(드래그)할 때 화면 가장자리에서 당겨 새로고침되거나 통통 튀는(러버밴드)
+     기본 동작이 우리 팬 동작과 부딪히지 않게 막는다. */
+  overscroll-behavior: none;
 }
 
 #app {
   height: 100vh;
+  /* 모바일 브라우저는 주소창이 늘었다 줄었다 하면서 100vh가 실제 화면보다 커지곤 한다(iOS 사파리가
+     특히 심함) — 그럴 때 아래쪽이 브라우저 UI에 가려지는 문제를 100dvh(동적 뷰포트 높이)로 막는다.
+     dvh를 모르는 구형 브라우저는 이 줄을 그냥 무시하고 위의 100vh가 그대로 적용된다. */
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   /* 배경 드래그(팬)나 카드 드래그 중에 마우스가 이름/라벨 텍스트 위를 지나가면서 브라우저 기본
@@ -82,6 +89,11 @@ html, body {
   gap: 18px;
   flex-wrap: wrap;
   padding: 8px 14px;
+  /* 노치/펀치홀 기기에서 툴바가 그 아래 가려지지 않도록 안전 영역만큼 여백을 더한다
+     (safe-area-inset이 없는 기기에선 env()가 0이라 기존 padding과 동일하게 동작). */
+  padding-top: calc(8px + env(safe-area-inset-top, 0px));
+  padding-left: calc(14px + env(safe-area-inset-left, 0px));
+  padding-right: calc(14px + env(safe-area-inset-right, 0px));
   background: var(--panel-bg);
   border-bottom: 1px solid var(--border);
   position: relative;
@@ -141,6 +153,7 @@ html, body {
   background-size: 24px 24px;
   cursor: grab;
   touch-action: none;
+  -webkit-touch-callout: none;
 }
 
 #viewport:active { cursor: grabbing; }
@@ -197,7 +210,8 @@ html, body {
 #trash-drop {
   position: fixed;
   left: 50%;
-  bottom: 28px;
+  /* 노치/홈 인디케이터가 있는 기기에서 화면 맨 아래에 깔리지 않도록 안전 영역만큼 더 띄운다. */
+  bottom: calc(28px + env(safe-area-inset-bottom, 0px));
   width: 60px;
   height: 60px;
   border-radius: 50%;
@@ -239,6 +253,7 @@ html, body {
   cursor: pointer;
   user-select: none;
   touch-action: none;
+  -webkit-touch-callout: none; /* iOS 길게 누르기 메뉴가 드래그를 방해하지 않게 */
 }
 
 .person-photo {
@@ -265,6 +280,8 @@ html, body {
   display: block;
   -webkit-user-drag: none;
   user-select: none;
+  /* iOS에서 길게 누르면 뜨는 "사진 저장/복사" 메뉴가 카드 드래그를 방해하지 않게 막는다. */
+  -webkit-touch-callout: none;
 }
 
 .person-name {
@@ -320,6 +337,7 @@ html, body {
   /* 중심 기준으로 이동 — 글자 크기를 조절해도(폭이 늘어나도) 중심이 그대로 유지되게. */
   transform: translate(-50%, -50%);
   touch-action: none;
+  -webkit-touch-callout: none; /* iOS 길게 누르기 메뉴가 드래그를 방해하지 않게 */
   z-index: 15; /* 사람 카드/관계선보다 위, 항상 라벨처럼 보이도록 */
 }
 
@@ -457,7 +475,10 @@ html, body {
 
 #inspector {
   position: fixed;
-  top: 0;
+  /* 0이 아니라 툴바의 실제 높이(main.js가 ResizeObserver로 재서 넣어주는 값)부터 시작한다 —
+     top:0으로 두고 z-index로 어느 한쪽을 위로 올리면, 겹치는 구간에 있는 반대쪽 버튼(툴바의
+     내보내기/가져오기 또는 사이드바의 닫기 ×)이 클릭이 안 먹는 문제가 생겼었다. */
+  top: var(--toolbar-h, 48px);
   right: 0;
   bottom: 0;
   width: 300px;
@@ -707,6 +728,71 @@ html, body {
 .crop-modal-actions button.primary:hover { background: var(--accent-hover); }
 
 @media (max-width: 640px) {
-  #inspector { width: 86vw; }
-  :root { --card-w: 104px; }
+  :root {
+    --card-w: 104px;
+    --photo-size: 76px; /* card-w를 줄인 비율에 맞춰 사진 원도 같이 줄인다(안 그러면 카드 폭을 거의 다 채워버림) */
+  }
+
+  /* 버튼이 한 줄에 다 안 들어가므로, 줄바꿈으로 여러 줄이 되어 캔버스를 잡아먹는 대신 가로로
+     스와이프해서 더 보는 한 줄 스크롤 툴바로 바꾼다. */
+  #toolbar {
+    flex-wrap: nowrap;
+    gap: 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  #toolbar::-webkit-scrollbar { display: none; }
+
+  .toolbar-group,
+  .save-indicator {
+    flex-shrink: 0; /* 가로 스크롤 안에서 버튼이 찌그러지지 않게 */
+  }
+
+  .toolbar-group-right {
+    /* 가로 스크롤에서는 오른쪽으로 밀어붙이는 대신 자연스러운 순서로 이어 붙인다 — auto 마진이
+       스크롤 영역 앞에 빈 공간을 만들어버리는 걸 막는다. */
+    margin-left: 0;
+  }
+
+  /* 사이드바는 화면 대부분을 차지하게 — 좁은 화면에서 고정폭 300px는 너무 좁고 답답하다. */
+  #inspector {
+    width: 92vw;
+    padding-right: calc(16px + env(safe-area-inset-right, 0px));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 아주 좁은 화면(iPhone SE 등 320px대)에서는 사진 크롭 모달의 정사각형 캔버스(280px)가
+   모달 여백과 합쳐지면 화면 폭을 넘어설 수 있어 한 단계 더 줄인다. */
+@media (max-width: 360px) {
+  .crop-canvas-wrap,
+  .crop-canvas-wrap canvas {
+    width: 220px;
+    height: 220px;
+  }
+  #crop-zoom { width: 190px; }
+}
+
+/* 터치가 주 입력 수단인 기기(화면 크기와 무관 — 태블릿도 포함)는 손가락이 마우스 커서보다
+   훨씬 굵으므로, 누르는 영역을 넉넉하게 키운다. */
+@media (pointer: coarse) {
+  #toolbar button,
+  .file-btn {
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+
+  .tag-chip.removable {
+    padding: 7px 12px;
+  }
+
+  /* 리사이즈 손잡이는 눈에 보이는 크기는 그대로 두되, 실제로 짚을 수 있는 영역만 넉넉히 넓힌다
+     (손가락으로 그 작은 점을 정확히 짚기는 어려우므로). */
+  .text-box-resize {
+    width: 24px;
+    height: 24px;
+    right: -10px;
+    bottom: -10px;
+  }
 }

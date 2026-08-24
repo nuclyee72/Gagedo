@@ -351,7 +351,9 @@ html, body {
   box-shadow: 0 2px 12px var(--accent-glow);
 }
 
-/* 항상 보이는 리사이즈 손잡이(모서리) — 대각선 줄무늬로 "드래그해서 크기 조절"이라는 걸 표시. */
+/* 리사이즈 손잡이(모서리) — 선택(사이드바가 열려 있는 상태)했을 때만 보이고 그때만 조작 가능하다.
+   선택 전에는 안 보이는 채로 핸들이 클릭을 가로채는 일도 없게(pointer-events:none) 막아서,
+   "박스를 클릭/이동하려 했는데 의도치 않게 리사이즈가 걸리는" 문제를 없앤다. */
 .text-box-resize {
   position: absolute;
   right: -7px;
@@ -365,6 +367,14 @@ html, body {
   border: 2px solid var(--panel-bg);
   box-shadow: 0 1px 4px var(--shadow);
   cursor: nwse-resize;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+
+.text-box.selected .text-box-resize {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* ---------- Relationship lines (SVG) ---------- */

@@ -242,6 +242,9 @@ async function doImport(file) {
   if (!confirm("현재 가계도를 덮어씁니다. 계속할까요?")) return;
   try {
     const data = JSON.parse(await file.text());
+    // 가져올 데이터가 지금 세션에서 쓰던 photoId를 우연히 재사용해도(예: 사진을 바꾼 뒤 예전
+    // 내보내기 파일을 다시 불러오는 경우) 캐시된 옛 이미지가 아니라 반드시 새로 읽어오게 한다.
+    renderer.photoUrls.clear();
     await store.importJSON(data, tree);
     camera.fitToContent(tree.getBounds());
   } catch (err) {

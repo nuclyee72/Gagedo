@@ -114,11 +114,15 @@ export class TreeStore {
 
   /** 내보내기 JSON을 읽어 모델과 IndexedDB를 함께 교체한다. */
   async importJSON(data, tree) {
-    tree.loadJSON(data);
+    // 이미지부터 IndexedDB에 다 써넣은 다음에 tree.loadJSON을 불러야 한다 — loadJSON은 "reset"
+    // 이벤트를 동기적으로 쏘고, 그걸 받은 TreeRenderer가 (비동기로) 곧장 각 카드 사진을
+    // store.getImage(photoId)로 읽으러 간다. 순서가 반대면 그 시점에 아직 이미지가 안 들어가 있어서
+    // 기본 아바타로 그려지고, 그 뒤로는 아무 이벤트도 다시 안 나서 영영 갱신되지 않는 버그가 있었다.
     for (const [id, dataUrl] of Object.entries(data.images || {})) {
       const blob = await dataURLToBlob(dataUrl);
       await this.putImage(id, blob);
     }
+    tree.loadJSON(data);
     await this.saveAll(tree);
   }
 }

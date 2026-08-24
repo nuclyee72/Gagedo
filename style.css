@@ -84,7 +84,11 @@ html, body {
   padding: 8px 14px;
   background: var(--panel-bg);
   border-bottom: 1px solid var(--border);
-  z-index: 20;
+  position: relative;
+  /* #inspector(오른쪽 사이드바)가 top:0부터 시작해서 툴바 오른쪽 끝(내보내기/가져오기/다크모드
+     버튼)까지 덮어버리는 바람에, 사이드바가 열려 있으면 그 버튼들을 못 누르던 문제 — 툴바를
+     사이드바보다 위로 둔다(정작 겹치는 영역은 사이드바의 빈 여백이라 가려도 상관없다). */
+  z-index: 35;
 }
 
 .toolbar-group-right {

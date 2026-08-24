@@ -118,7 +118,9 @@ html, body {
 }
 
 .save-indicator {
-  margin-left: auto;
+  /* margin-left:auto를 여기 또 두면 .toolbar-group-right(다크 모드 버튼)의 auto와 남는 공간을
+     반씩 나눠 가져서, 내보내기/가져오기가 오른쪽 끝에 안 붙고 중간에 붕 뜨는 문제가 있었다 —
+     오른쪽 정렬은 .toolbar-group-right 하나만 맡는다. */
   font-size: 12px;
   color: var(--muted);
 }

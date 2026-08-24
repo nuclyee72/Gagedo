@@ -25,6 +25,19 @@ html, body {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  /* 배경 드래그(팬)나 카드 드래그 중에 마우스가 이름/라벨 텍스트 위를 지나가면서 브라우저 기본
+     텍스트 선택(파랗게 하이라이트)이 걸리는 걸 막는다. 실제로 타이핑하는 입력창들은 아래에서
+     다시 풀어준다. */
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+}
+
+#app input,
+#app textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
 }
 
 /* ---------- Toolbar ---------- */
@@ -38,6 +51,11 @@ html, body {
   background: var(--panel-bg);
   border-bottom: 1px solid var(--border);
   z-index: 20;
+}
+
+.toolbar-group-right {
+  /* 이 묶음부터 오른쪽 끝으로 밀어붙인다 — 뒤따르는 저장 인디케이터도 자연히 그 옆(오른쪽)에 붙는다. */
+  margin-left: auto;
 }
 
 .toolbar-group {
@@ -237,19 +255,22 @@ html, body {
 .tag-chip.removable {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   background: #eef1f5;
   color: var(--text);
+  cursor: pointer;
+  border: 1px solid transparent;
 }
 
-.tag-chip.removable button {
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
+.tag-chip.removable:hover {
+  background: #e3e7ee;
+  border-color: var(--border);
+}
+
+/* ×는 버튼이 아니라 그냥 곁들이는 텍스트 — 칩 전체가 클릭 대상(눌러서 삭제, 확인창 뜸)이다. */
+.tag-chip-x {
   color: var(--muted);
-  padding: 0;
+  line-height: 1;
 }
 
 /* ---------- Relationship lines (SVG) ---------- */
@@ -397,12 +418,20 @@ html, body {
 .f-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 7px;
 }
 
+/* 사이드바의 태그 칩은 카드 위 태그(.tag-chip 기본값)보다 훨씬 크게 — 이 안에서만 키운다. */
+.f-tags .tag-chip {
+  font-size: 13px;
+  padding: 5px 10px;
+}
+
+/* 사진 등록: 원형 박스가 클릭(파일 선택)·드래그앤드롭·붙여넣기(Ctrl+V)를 담당하고, 그 바로
+   아래 입력창이 URL을 담당한다 — 안내 문구 없이 박스 자체(제목 텍스트 대신 title 속성)로 안내. */
 .photo-drop {
-  width: 84px;
-  height: 84px;
+  width: 180px;
+  height: 180px;
   margin: 2px auto 0;
   border-radius: 50%;
   overflow: hidden;
@@ -424,16 +453,13 @@ html, body {
   display: block;
 }
 
-.photo-drop-hint {
-  margin: 6px 0 0;
-  font-size: 11px;
-  color: var(--muted);
-  text-align: center;
+.f-photo-url {
+  width: 100%;
 }
 
 .f-photo-edit {
   display: block;
-  margin: 4px auto 0;
+  margin: 6px auto 0;
   border: none;
   background: none;
   color: var(--accent);
@@ -442,18 +468,10 @@ html, body {
   cursor: pointer;
 }
 
-.photo-url-row {
-  display: flex;
-  gap: 6px;
-}
-
-.photo-url-row input {
-  flex: 1;
-  min-width: 0;
-}
-
-.photo-url-row button {
-  white-space: nowrap;
+/* display:block이 브라우저 기본 [hidden]{display:none} 규칙을 덮어써버려서, 사진이 없을 때도
+   "위치·크기 다시 조정" 버튼이 계속 보이던 버그 — hidden 속성일 땐 명시적으로 다시 숨긴다. */
+.f-photo-edit[hidden] {
+  display: none;
 }
 
 /* ---------- Relationship type modal ---------- */

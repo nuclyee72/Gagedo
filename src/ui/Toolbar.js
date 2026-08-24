@@ -21,10 +21,10 @@ export class Toolbar {
         <button type="button" data-action="auto-arrange" title="세대별로 가로열을 맞춰 자동으로 정렬합니다">🧩 자동 정렬</button>
       </div>
       <div class="toolbar-group">
-        <button type="button" data-action="undo">↶ 실행취소</button>
-        <button type="button" data-action="redo">↷ 다시실행</button>
+        <button type="button" data-action="undo" title="실행취소" aria-label="실행취소">↶</button>
+        <button type="button" data-action="redo" title="다시실행" aria-label="다시실행">↷</button>
       </div>
-      <div class="toolbar-group">
+      <div class="toolbar-group toolbar-group-right">
         <button type="button" data-action="export">내보내기</button>
         <label class="file-btn">가져오기<input type="file" accept="application/json" data-action="import"></label>
       </div>

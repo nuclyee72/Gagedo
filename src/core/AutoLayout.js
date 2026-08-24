@@ -3,16 +3,21 @@
  * 규약: parent-child 관계는 "먼저 클릭한 사람(fromId)이 부모, 나중에 클릭한 사람(toId)이 자식".
  *  - 부모-자식으로 이어진 사람들은 세대가 아래로 1씩 늘어난다(부모 세대 + 1).
  *  - 배우자/형제자매로 이어진 사람들은 같은 세대(같은 가로열)로 맞춘다.
- *  - 같은 세대 안에서는 "부모가 같은 형제 묶음"을 그 부모의 x 중심 바로 아래에 두어, 부모-자식
- *    선이 최대한 가지런하게(수직에 가깝게) 이어지도록 배치한다. 서로 다른 부모를 둔 묶음끼리는
+ *  - 같은 세대 안에서는 "부모 쌍이 같은 형제 묶음"을 그 부모 쌍의 x 중심 바로 아래에 두어, 부모-자식
+ *    선이 최대한 가지런하게(수직에 가깝게) 이어지도록 배치한다. 서로 다른 부모(쌍)를 둔 묶음끼리는
  *    겹치지 않게 좌우로 밀어낸다.
+ *  - 한 사람에게 배우자가 둘 이상(재혼 등)이면 그 사람을 가운데 두고 배우자를 좌우로 벌려 배치하고,
+ *    각 배우자와의 자식 수에 맞춰 그 배우자 쪽 간격을 넉넉히 벌려서(트렁크가 항상 그 자식 묶음의
+ *    정중앙에 오도록) 부모-자식 세로선이 기울지 않고 곧게 떨어지게 한다.
  *
  * 반환값: Map<personId, {x, y}> — 호출한 쪽에서 tree.updatePerson으로 실제 반영한다.
  */
-// 자동 정렬의 기본 간격 값. 카드를 손으로 옮길 때의 "템플릿 간격" 스냅(TreeRenderer._familySnapCandidates)도
+// 자동 정렬의 기본 간격 값. 카드를 손으로 옮길 때의 "템플릿 간격" 스냅(TreeRenderer._templateSnapCandidates)도
 // 이 값을 그대로 가져다 써서, 수동 배치가 자동 정렬 결과와 어긋나지 않게 한다.
 export const ROW_SPACING = 240;
 export const COL_SPACING = 170;
+
+const EMPTY_SET = new Set();
 
 export function computeAutoLayout(tree, { rowSpacing = ROW_SPACING, colSpacing = COL_SPACING } = {}) {
   const people = [...tree.people.values()];
@@ -86,16 +91,45 @@ export function computeAutoLayout(tree, { rowSpacing = ROW_SPACING, colSpacing =
   unify(spouseLinks);
   unify(siblingLinks);
 
-  const spousePartner = new Map();
+  // 배우자는 한 명이 아닐 수 있다(재혼 등) — personId -> 배우자 id 배열(등록 순서)로 여러 명을 담는다.
+  const spousesOf = new Map();
   for (const [a, b] of spouseLinks) {
-    spousePartner.set(a, b);
-    spousePartner.set(b, a);
+    if (!spousesOf.has(a)) spousesOf.set(a, []);
+    if (!spousesOf.has(b)) spousesOf.set(b, []);
+    spousesOf.get(a).push(b);
+    spousesOf.get(b).push(a);
   }
 
-  // 3) 세대별로 좌표를 정한다. 부모가 같은 자식들을 하나의 "형제 묶음"으로 만들어 그 부모의
-  // x 중심 바로 아래에 두고(부모-자식 선이 최대한 가지런해지도록), 서로 다른 부모를 둔 묶음끼리는
-  // 겹치지 않게 좌우로 늘어놓는다. 부모 기록이 없는 사람(결혼으로 들어온 배우자 등)은 배우자가
-  // 속한 묶음에 바로 옆자리로 끼워 넣고, 그마저 없으면(최상위 세대) 중심 0인 묶음으로 취급한다.
+  // "부모 쌍"(부모 + 그 배우자) 별 자식 수 — 배우자를 얼마나 떨어뜨려야 그 자식 묶음이 트렁크
+  // 정중앙에 딱 맞는지 미리 계산해두는 데 쓴다. viaSpouseId가 명시된(=이번 세션에서 만든 "부모-
+  // 자식(부모2)") 관계만 대상으로 한다 — 어느 두 사람의 자식 수인지 애매하지 않은 경우만.
+  const childCountByCoupleKey = new Map(); // "id1~id2"(정렬) -> Set<childId>
+  for (const rel of tree.relationships.values()) {
+    if (rel.type !== "parent-child" || !rel.viaSpouseId) continue;
+    const key = [rel.fromId, rel.viaSpouseId].sort().join("~");
+    if (!childCountByCoupleKey.has(key)) childCountByCoupleKey.set(key, new Set());
+    childCountByCoupleKey.get(key).add(rel.toId);
+  }
+  /** hub와 spouse 사이에 둘 자식 수 기반 간격 — 자식이 없으면 기본 한 칸(colSpacing). */
+  const gapFor = (idA, idB) => {
+    const key = [idA, idB].sort().join("~");
+    const n = (childCountByCoupleKey.get(key) || EMPTY_SET).size;
+    const width = Math.max(0, n - 1) * colSpacing;
+    return width + colSpacing;
+  };
+
+  // 자식마다 "어느 부모 쌍" 소속인지 판단할 때 쓸 대표 관계(가장 먼저 찾은 것 하나) — 한 자식에게
+  // 이론상 여러 부모-자식 관계가 걸려 있어도(드묾) 레이아웃 묶음 배정은 하나만 기준으로 한다.
+  const primaryParentRelOf = new Map();
+  for (const rel of tree.relationships.values()) {
+    if (rel.type !== "parent-child" && rel.type !== "parent-child-solo") continue;
+    if (!primaryParentRelOf.has(rel.toId)) primaryParentRelOf.set(rel.toId, rel);
+  }
+
+  // 3) 세대별로 좌표를 정한다. "부모 쌍이 같은 형제 묶음"을 그 부모 쌍의 x 중심 바로 아래에 두고,
+  // 서로 다른 부모(쌍)를 둔 묶음끼리는 겹치지 않게 좌우로 늘어놓는다. 부모 기록이 없는 사람(결혼으로
+  // 들어온 배우자, 최상위 세대 등)은 배우자가 이미 속한 묶음이 있으면 그 옆자리에(자식 수에 맞춰
+  // 넉넉한 간격으로) 끼워 넣고, 그마저 없으면 자기들끼리 새 묶음을 만든다.
   const rows = new Map();
   for (const p of people) {
     const g = generation.get(p.id) ?? 0;
@@ -103,89 +137,125 @@ export function computeAutoLayout(tree, { rowSpacing = ROW_SPACING, colSpacing =
     rows.get(g).push(p.id);
   }
 
-  // 자식 쪽 T자 연결선의 트렁크는 "기록된 부모 + 그 배우자"의 중점에서 내려온다(TreeRenderer
-  // 참고). 자동 정렬의 묶음 중심도 똑같이 계산해야 트렁크와 자식 묶음이 어긋나지 않는다 —
-  // 배우자를 빼고 기록된 부모의 x만 쓰면, 자식이 둘 이상일 때 버스 바가 한쪽으로 치우쳐 보인다.
-  const anchorXFor = (parents) => {
-    const xs = [];
-    const seen = new Set();
-    for (const pid of parents) {
-      if (positions.has(pid) && !seen.has(pid)) {
-        xs.push(positions.get(pid).x);
-        seen.add(pid);
-      }
-      const partner = spousePartner.get(pid);
-      if (partner && positions.has(partner) && !seen.has(partner)) {
-        xs.push(positions.get(partner).x);
-        seen.add(partner);
-      }
-    }
+  const positions = new Map();
+
+  const anchorXForIds = (ids) => {
+    const xs = ids.filter((pid) => positions.has(pid)).map((pid) => positions.get(pid).x);
     return xs.length ? xs.reduce((sum, x) => sum + x, 0) / xs.length : 0;
   };
 
-  const positions = new Map();
   for (const g of [...rows.keys()].sort((a, b) => a - b)) {
     const ids = rows.get(g);
 
-    const clusters = new Map(); // parentSetKey -> { anchorX, members: [] }
+    const clusters = new Map(); // coupleKey -> { anchorX, members: [id...], customGaps?: Map<pairKey, gap> }
     const withoutParents = [];
     for (const id of ids) {
-      const parents = [...(childToParents.get(id) || [])].filter((pid) => positions.has(pid));
-      if (!parents.length) {
+      const rel = primaryParentRelOf.get(id);
+      if (!rel) {
         withoutParents.push(id);
         continue;
       }
-      const key = parents.slice().sort().join(",");
-      if (!clusters.has(key)) {
-        clusters.set(key, { anchorX: anchorXFor(parents), members: [] });
+      let anchorIds;
+      if (rel.type === "parent-child-solo") {
+        anchorIds = [rel.fromId]; // 부모1: 배우자와 무관하게 항상 그 부모 한 명만 기준
+      } else if (rel.viaSpouseId) {
+        anchorIds = [rel.fromId, rel.viaSpouseId]; // 부모2: 그 특정 부부만 기준(재혼 시 서로 구분됨)
+      } else {
+        anchorIds = [rel.fromId, ...(spousesOf.get(rel.fromId) || [])]; // viaSpouseId 없는 예전 데이터 추측
       }
+      anchorIds = anchorIds.filter((pid) => positions.has(pid));
+      if (!anchorIds.length) {
+        withoutParents.push(id);
+        continue;
+      }
+      const key = anchorIds.slice().sort().join("~");
+      if (!clusters.has(key)) clusters.set(key, { anchorX: anchorXForIds(anchorIds), members: [] });
       clusters.get(key).members.push(id);
     }
     for (const cluster of clusters.values()) {
       cluster.members.sort((a, b) => a.localeCompare(b));
     }
 
-    // 부모 기록이 없는 사람: 배우자가 이미 어느 묶음에 있으면 그 옆자리에 끼워 넣고,
-    // 아니면(최상위 세대 등) 별도의 "루트" 묶음으로 모은다.
-    const rootMembers = [];
-    for (const id of withoutParents) {
-      const partner = spousePartner.get(id);
-      const hostCluster = [...clusters.values()].find((c) => c.members.includes(partner));
-      if (hostCluster) {
-        hostCluster.members.splice(hostCluster.members.indexOf(partner) + 1, 0, id);
-      } else {
-        rootMembers.push(id);
+    // 부모 위치가 없는 사람(결혼으로 들어온 배우자 등): 배우자 중 하나가 이미 어느 묶음에 속해
+    // 있으면 그 옆에 끼워 넣는다. 첫 번째 배우자는 기존처럼 오른쪽에, 두 번째부터는 왼쪽에 번갈아
+    // 끼워 넣어 허브(이미 배치된 쪽)를 가운데 두고 배우자가 좌우로 뻗어나가게 한다. 자식이 있는
+    // 배우자 쪽은 gapFor()로 그 자식 수만큼 간격을 넉넉히 벌려, 나중에 자식 묶음이 겹침 방지로
+    // 밀려나 트렁크가 기울어지는 일 없이 처음부터 자식 묶음 정중앙에 오게 한다.
+    const leftover = new Set(withoutParents);
+    const insertedCountFor = new Map(); // hubId -> 지금까지 끼워 넣은 배우자 수
+    const tryAttach = (id) => {
+      for (const partner of spousesOf.get(id) || []) {
+        const host = [...clusters.values()].find((c) => c.members.includes(partner));
+        if (!host) continue;
+        const seq = insertedCountFor.get(partner) || 0;
+        insertedCountFor.set(partner, seq + 1);
+        const idx = host.members.indexOf(partner);
+        if (seq === 0) host.members.splice(idx + 1, 0, id);
+        else host.members.splice(idx, 0, id);
+        host.customGaps = host.customGaps || new Map();
+        host.customGaps.set([id, partner].sort().join("~"), gapFor(id, partner));
+        return true;
       }
-    }
-    if (rootMembers.length) {
-      const ordered = [];
-      const placed = new Set();
-      for (const id of rootMembers) {
-        if (placed.has(id)) continue;
-        ordered.push(id);
-        placed.add(id);
-        const partner = spousePartner.get(id);
-        if (partner && rootMembers.includes(partner) && !placed.has(partner)) {
-          ordered.push(partner);
-          placed.add(partner);
+      return false;
+    };
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const id of [...leftover]) {
+        if (tryAttach(id)) {
+          leftover.delete(id);
+          changed = true;
         }
       }
-      clusters.set("__root__", { anchorX: 0, members: ordered });
     }
 
-    // 묶음을 부모 중심 x 기준으로 좌에서 우로 나열하되, 서로 겹치면 최소 간격만큼 밀어낸다.
+    // 여기까지도 못 붙은 사람들은 서로하고만 이어져 있는(완전히 독립된) 뿌리 그룹 — 각자 자기들끼리
+    // 새 묶음을 만든다(허브 + 배우자를 좌우로, 같은 규칙으로).
+    const placed = new Set();
+    let rootIdx = 0;
+    for (const id of leftover) {
+      if (placed.has(id)) continue;
+      const members = [id];
+      placed.add(id);
+      const customGaps = new Map();
+      let seq = 0;
+      for (const partner of spousesOf.get(id) || []) {
+        if (!leftover.has(partner) || placed.has(partner)) continue;
+        placed.add(partner);
+        const idx = members.indexOf(id);
+        if (seq === 0) members.splice(idx + 1, 0, partner);
+        else members.splice(idx, 0, partner);
+        customGaps.set([id, partner].sort().join("~"), gapFor(id, partner));
+        seq++;
+      }
+      clusters.set(`__root${rootIdx++}__`, { anchorX: 0, members, customGaps });
+    }
+
+    // 묶음을 부모(쌍) 중심 x 기준으로 좌에서 우로 나열하되, 서로 겹치면 최소 간격만큼 밀어낸다.
+    // 묶음 내부는 이제 고정 colSpacing이 아니라 인접 쌍별 customGaps(있으면)를 써서 폭을 계산한다.
     const clusterList = [...clusters.values()].sort((a, b) => a.anchorX - b.anchorX);
     let rightEdge = null;
     for (const cluster of clusterList) {
-      const n = cluster.members.length;
-      let startX = cluster.anchorX - ((n - 1) * colSpacing) / 2;
+      const members = cluster.members;
+      const gaps = cluster.customGaps;
+      const offsets = [0];
+      for (let i = 1; i < members.length; i++) {
+        let gap = colSpacing;
+        if (gaps) {
+          const pairKey = [members[i - 1], members[i]].sort().join("~");
+          if (gaps.has(pairKey)) gap = gaps.get(pairKey);
+        }
+        offsets.push(offsets[i - 1] + gap);
+      }
+      const blockWidth = offsets[offsets.length - 1]; // offsets[0]=0이 항상 최솟값(간격은 항상 양수)
+      let startX = cluster.anchorX - blockWidth / 2;
       if (rightEdge !== null && startX < rightEdge + colSpacing) {
         startX = rightEdge + colSpacing;
       }
-      cluster.members.forEach((id, idx) => {
-        positions.set(id, { x: startX + idx * colSpacing, y: g * rowSpacing });
+      members.forEach((id, idx) => {
+        positions.set(id, { x: startX + offsets[idx], y: g * rowSpacing });
       });
-      rightEdge = startX + (n - 1) * colSpacing;
+      rightEdge = startX + blockWidth;
     }
   }
 

@@ -30,12 +30,8 @@ export class InspectorPanel {
       <div class="photo-drop" tabindex="0" title="클릭해서 파일 선택 · 드래그해서 놓기 · Ctrl+V로 붙여넣기">
         <img class="photo-drop-preview" src="${DEFAULT_AVATAR}" alt="">
       </div>
-      <p class="photo-drop-hint">클릭 · 드래그 · 붙여넣기(Ctrl+V)로 사진 추가</p>
-      <button type="button" class="f-photo-edit" hidden>위치·크기 다시 조정</button>
-      <div class="photo-url-row">
-        <input type="text" class="f-photo-url" placeholder="또는 이미지 URL 붙여넣기">
-        <button type="button" class="f-photo-url-apply">적용</button>
-      </div>
+      <input type="text" class="f-photo-url" placeholder="이미지">
+      <button type="button" class="f-photo-edit" hidden>이미지 수정</button>
       <input type="file" accept="image/*" class="f-photo-file" style="display:none">
       <label>속성(태그)
         <input type="text" class="f-tag-input" placeholder="태그 입력 후 Enter" list="tag-suggestions">
@@ -43,7 +39,7 @@ export class InspectorPanel {
       </label>
       <div class="f-tags"></div>
       <label>메모
-        <textarea class="f-notes" rows="3" placeholder="자유롭게 메모"></textarea>
+        <textarea class="f-notes" rows="3" placeholder="예시 텍스트"></textarea>
       </label>
       <button type="button" class="f-delete">이 인물 삭제</button>
     `;
@@ -80,12 +76,13 @@ export class InspectorPanel {
     });
   }
 
-  /** 파일 선택 / 드래그앤드롭 / 클립보드 붙여넣기 / URL 붙여넣기 — 네 가지 경로를 모두 하나의 사진 입력으로 연결한다. */
+  /** 파일 선택 / 드래그앤드롭 / 클립보드 붙여넣기 / URL 붙여넣기 — 네 가지 경로를 모두 사진 입력
+   * 하나로 연결한다. 원형 박스(.photo-drop)는 클릭/드래그/붙여넣기를, 그 아래 별도 입력창은 URL을
+   * 담당한다. */
   _wirePhotoInput() {
     const dropzone = this.el.querySelector(".photo-drop");
     const fileInput = this.el.querySelector(".f-photo-file");
     const urlInput = this.el.querySelector(".f-photo-url");
-    const urlApply = this.el.querySelector(".f-photo-url-apply");
 
     dropzone.addEventListener("click", () => fileInput.click());
     dropzone.addEventListener("keydown", (e) => {
@@ -128,7 +125,6 @@ export class InspectorPanel {
     };
     document.addEventListener("paste", this._onPaste);
 
-    urlApply.addEventListener("click", () => this._applyUrlInput());
     urlInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); this._applyUrlInput(); }
     });
@@ -222,18 +218,28 @@ export class InspectorPanel {
     const wrap = this.el.querySelector(".f-tags");
     wrap.innerHTML = "";
     for (const tag of this.person.tags || []) {
+      // 칩 전체가 삭제 버튼이다(따로 떠 있는 × 버튼이 아니라, 눌렀을 때 확인 후 지워짐) — ×는
+      // 그 자체로 클릭 가능한 버튼이 아니라 그냥 곁들이는 텍스트일 뿐이다.
       const chip = document.createElement("span");
       chip.className = "tag-chip removable";
+      chip.tabIndex = 0;
+      chip.setAttribute("role", "button");
+      chip.title = "클릭하면 이 태그를 삭제합니다";
       const label = document.createElement("span");
       label.textContent = tag;
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.textContent = "×";
-      removeBtn.onclick = () => {
+      const x = document.createElement("span");
+      x.className = "tag-chip-x";
+      x.textContent = "×";
+      chip.append(label, x);
+      const removeTag = () => {
+        if (!confirm(`"${tag}" 태그를 삭제할까요?`)) return;
         this._patch({ tags: this.person.tags.filter((t) => t !== tag) });
         this._renderTags();
       };
-      chip.append(label, removeBtn);
+      chip.addEventListener("click", removeTag);
+      chip.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); removeTag(); }
+      });
       wrap.appendChild(chip);
     }
 

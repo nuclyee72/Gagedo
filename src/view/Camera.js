@@ -86,23 +86,60 @@ export class Camera {
     this._apply();
   }
 
-  /** bounds(월드 좌표계) 전체가 화면에 들어오도록 맞춘다. */
-  fitToContent(bounds, padding = 90) {
+  /** bounds(월드 좌표계) 전체가 화면에 들어오도록 맞춘다(부드럽게 애니메이션). 좌우 여백을
+   *  위아래보다 조금 더 둬서(paddingX > paddingY) 카드가 화면 가장자리에 바짝 붙어 보이지 않게 한다. */
+  fitToContent(bounds, { paddingX = 140, paddingY = 100, animate = true } = {}) {
     if (!bounds) return this.resetView();
     const rect = this.viewport.getBoundingClientRect();
     const w = Math.max(1, bounds.maxX - bounds.minX);
     const h = Math.max(1, bounds.maxY - bounds.minY);
     const scale = clamp(
-      Math.min((rect.width - padding * 2) / w, (rect.height - padding * 2) / h),
+      Math.min((rect.width - paddingX * 2) / w, (rect.height - paddingY * 2) / h),
       MIN_SCALE,
       MAX_SCALE
     );
     const cx = (bounds.minX + bounds.maxX) / 2;
     const cy = (bounds.minY + bounds.maxY) / 2;
-    this.scale = scale;
-    this.panX = rect.width / 2 - cx * scale;
-    this.panY = rect.height / 2 - cy * scale;
-    this._apply();
+    const targetPanX = rect.width / 2 - cx * scale;
+    const targetPanY = rect.height / 2 - cy * scale;
+    if (!animate) {
+      this.panX = targetPanX;
+      this.panY = targetPanY;
+      this.scale = scale;
+      this._apply();
+      return;
+    }
+    this._animateTo(targetPanX, targetPanY, scale);
+  }
+
+  /** panX/panY/scale을 목표 값까지 짧게 애니메이션(ease-out)한다. 전체보기처럼 "한 번에 툭"
+   *  움직이면 어지러운 조작을 부드러운 이동으로 바꿀 때 쓴다. */
+  _animateTo(targetPanX, targetPanY, targetScale, duration = 420) {
+    if (this._fitRaf) cancelAnimationFrame(this._fitRaf);
+    const startPanX = this.panX;
+    const startPanY = this.panY;
+    const startScale = this.scale;
+    const startTime = performance.now();
+    this.setTransforming(true);
+    const step = (now) => {
+      const t = Math.min(1, (now - startTime) / duration);
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      this.panX = startPanX + (targetPanX - startPanX) * eased;
+      this.panY = startPanY + (targetPanY - startPanY) * eased;
+      this.scale = startScale + (targetScale - startScale) * eased;
+      this._apply();
+      if (t < 1) {
+        this._fitRaf = requestAnimationFrame(step);
+      } else {
+        this.panX = targetPanX;
+        this.panY = targetPanY;
+        this.scale = targetScale;
+        this._apply();
+        this.setTransforming(false);
+        this._fitRaf = null;
+      }
+    };
+    this._fitRaf = requestAnimationFrame(step);
   }
 
   _apply() {

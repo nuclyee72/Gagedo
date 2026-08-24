@@ -268,7 +268,7 @@ document.addEventListener("keydown", (e) => {
 async function init() {
   const data = await store.loadAll();
   tree.loadJSON(data); // "reset" 이벤트를 통해 renderer.renderAll()이 이미 트리거된다
-  camera.fitToContent(tree.getBounds());
+  camera.fitToContent(tree.getBounds(), { animate: false }); // 첫 로드는 애니메이션 없이 바로 맞춘다
   updateEmptyHint();
   toolbar.setSaveState("저장됨");
 }

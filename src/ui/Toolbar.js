@@ -18,13 +18,16 @@ export class Toolbar {
         <button type="button" data-action="fit" title="전체보기" aria-label="전체보기">⛶</button>
       </div>
       <div class="toolbar-group">
-        <button type="button" data-action="auto-arrange" title="세대별로 가로열을 맞춰 자동으로 정렬합니다">🧩 정렬</button>
+        <button type="button" data-action="auto-arrange" title="세대별로 가로열을 맞춰 자동으로 정렬합니다">정렬</button>
       </div>
       <div class="toolbar-group">
         <button type="button" data-action="undo" title="실행취소" aria-label="실행취소">↶</button>
         <button type="button" data-action="redo" title="다시실행" aria-label="다시실행">↷</button>
       </div>
       <div class="toolbar-group toolbar-group-right">
+        <button type="button" data-action="theme-toggle" title="다크 모드 전환" aria-label="다크 모드 전환">🌙</button>
+      </div>
+      <div class="toolbar-group">
         <button type="button" data-action="export">내보내기</button>
         <label class="file-btn">가져오기<input type="file" accept="application/json" data-action="import"></label>
       </div>
@@ -54,6 +57,11 @@ export class Toolbar {
 
   setSaveState(text) {
     this.el.querySelector('[data-role="save-indicator"]').textContent = text;
+  }
+
+  /** isDark: 지금 다크 모드가 켜져 있는지 — 버튼엔 눌렀을 때 바뀔 "다음" 모드의 아이콘을 보여준다. */
+  setThemeIcon(isDark) {
+    this.el.querySelector('[data-action="theme-toggle"]').textContent = isDark ? "☀️" : "🌙";
   }
 }
 

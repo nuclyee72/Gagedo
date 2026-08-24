@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>가계도 메이커</title>
 <link rel="stylesheet" href="style.css">
+<script>
+  // CSS/앱 스크립트가 뜨기 전에 테마부터 정해서, 다크 모드 사용자가 밝은 화면을 잠깐이라도
+  // 보는 깜빡임(FOUC)을 막는다. 저장된 값이 없으면 OS/브라우저의 다크 모드 설정을 따른다.
+  (function () {
+    try {
+      var stored = localStorage.getItem("gagedo-theme");
+      var theme = stored || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    } catch (e) { /* localStorage 접근 불가(예: 완전 차단된 시크릿 모드)면 기본(라이트)으로 둔다 */ }
+  })();
+</script>
 </head>
 <body>
   <div id="app">

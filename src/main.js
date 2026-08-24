@@ -105,7 +105,21 @@ const toolbar = new Toolbar(toolbarEl, {
   redo: () => undoMgr.performRedo(),
   export: doExport,
   import: doImport,
+  themeToggle: () => {
+    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+    applyTheme(isDark ? "light" : "dark");
+  },
 });
+
+const THEME_KEY = "gagedo-theme";
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  toolbar.setThemeIcon(theme === "dark");
+  try { localStorage.setItem(THEME_KEY, theme); } catch { /* 저장 안 돼도(시크릿 모드 등) 화면 전환 자체는 되게 둔다 */ }
+}
+// index.html의 인라인 스크립트가 깜빡임 방지를 위해 이 스크립트보다 먼저 data-theme를 이미
+// 정해뒀다 — 툴바 아이콘을 그 값에 맞춰 동기화한다(여기서 다시 localStorage에 쓸 필요는 없다).
+toolbar.setThemeIcon(document.documentElement.getAttribute("data-theme") === "dark");
 
 function zoomAtCenter(factor) {
   const rect = viewportEl.getBoundingClientRect();

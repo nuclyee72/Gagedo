@@ -1,14 +1,48 @@
 :root {
   --bg: #eef1f5;
   --panel-bg: #ffffff;
+  --surface: #f8f9fb; /* 패널 안의 옅은 박스(사진 드롭존, 모달 버튼 등) */
   --border: #dde2e8;
   --text: #222831;
   --muted: #6b7280;
   --accent: #3f6fd6;
   --accent-soft: #e5edff;
+  --accent-hover: #3560bf;
+  --accent-glow: rgba(63, 111, 214, 0.45);
   --danger: #d0483e;
+  --viewport-bg: #f6f7f9;
+  --viewport-dot: #d3d9e0;
+  --shadow: rgba(20, 30, 50, 0.18);
+  --panel-shadow: rgba(0, 0, 0, 0.08);
+  --modal-shadow: rgba(0, 0, 0, 0.2);
+  --overlay: rgba(20, 25, 35, 0.4);
+  --snap-accent-2: #e07a3f;
   --card-w: 132px;
   --photo-size: 96px;
+  color-scheme: light;
+}
+
+/* 다크 모드 — 값만 갈아끼우면 되도록 색은 전부 위 변수를 거쳐서 쓴다(하드코딩 최소화). */
+:root[data-theme="dark"] {
+  --bg: #14171c;
+  --panel-bg: #1c2028;
+  --surface: #262b34;
+  --border: #363c47;
+  --text: #e7eaf0;
+  --muted: #98a1b0;
+  --accent: #5b8def;
+  --accent-soft: #24365e;
+  --accent-hover: #7ba5f2;
+  --accent-glow: rgba(91, 141, 239, 0.55);
+  --danger: #e37669;
+  --viewport-bg: #14171c;
+  --viewport-dot: #2c313c;
+  --shadow: rgba(0, 0, 0, 0.45);
+  --panel-shadow: rgba(0, 0, 0, 0.35);
+  --modal-shadow: rgba(0, 0, 0, 0.55);
+  --overlay: rgba(0, 0, 0, 0.6);
+  --snap-accent-2: #f2954f;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -66,7 +100,7 @@ html, body {
 
 #toolbar button, .file-btn {
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--panel-bg);
   color: var(--text);
   padding: 6px 12px;
   border-radius: 8px;
@@ -75,7 +109,7 @@ html, body {
   white-space: nowrap;
 }
 
-#toolbar button:hover, .file-btn:hover { background: #f4f6f9; }
+#toolbar button:hover, .file-btn:hover { background: var(--surface); }
 #toolbar button.toggle.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 .file-btn { position: relative; overflow: hidden; display: inline-block; }
@@ -96,8 +130,8 @@ html, body {
   position: relative;
   flex: 1;
   overflow: hidden;
-  background-color: #f6f7f9;
-  background-image: radial-gradient(circle, #d3d9e0 1px, transparent 1px);
+  background-color: var(--viewport-bg);
+  background-image: radial-gradient(circle, var(--viewport-dot) 1px, transparent 1px);
   background-size: 24px 24px;
   cursor: grab;
   touch-action: none;
@@ -163,7 +197,7 @@ html, body {
   border-radius: 50%;
   background: var(--panel-bg);
   border: 2px solid var(--border);
-  box-shadow: 0 4px 16px rgba(20, 30, 50, 0.18);
+  box-shadow: 0 4px 16px var(--shadow);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -207,15 +241,15 @@ html, body {
   margin: 0 auto 8px;
   border-radius: 50%;
   overflow: hidden;
-  background: #eef1f5;
+  background: var(--surface);
   border: 3px solid var(--panel-bg);
-  box-shadow: 0 2px 10px rgba(20, 30, 50, 0.18);
+  box-shadow: 0 2px 10px var(--shadow);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .person-card.selected .person-photo {
   border-color: var(--accent);
-  box-shadow: 0 2px 12px rgba(63, 111, 214, 0.45);
+  box-shadow: 0 2px 12px var(--accent-glow);
 }
 
 .person-photo img {
@@ -256,14 +290,14 @@ html, body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: #eef1f5;
+  background: var(--surface);
   color: var(--text);
   cursor: pointer;
   border: 1px solid transparent;
 }
 
 .tag-chip.removable:hover {
-  background: #e3e7ee;
+  background: var(--accent-soft);
   border-color: var(--border);
 }
 
@@ -287,6 +321,13 @@ html, body {
   fill: none;
   stroke-linejoin: round;
   pointer-events: none;
+}
+
+/* 관계선 색은 RelationshipLine.js가 stroke 속성으로 직접 지정한다(TYPE_STYLE) — SVG presentation
+   attribute는 CSS보다 우선순위가 낮으므로, 이 규칙이 없어도 이미 색을 덮어쓸 수 있지만 지금은
+   같은 색을 그대로 두고 다크 배경에서도 잘 보이도록 밝기만 살짝 올린다. */
+:root[data-theme="dark"] .rel-line-visible {
+  filter: brightness(1.5) saturate(1.1);
 }
 
 .rel-line-label {
@@ -313,7 +354,7 @@ html, body {
   box-sizing: border-box;
   border: 1px solid var(--accent);
   border-radius: 4px;
-  background: #fff;
+  background: var(--panel-bg);
   color: var(--text);
   font-size: 11px;
   font-family: inherit;
@@ -333,7 +374,7 @@ html, body {
 /* 부모 쌍(부모-자식(부모2)) 기준 중심/n등분/템플릿 간격 스냅 — 어느 부모 선을 기준으로 달라붙었는지
    보여주는 점선. 일반 스냅 가이드(.snap-guide)와 헷갈리지 않게 색을 다르게 둔다. */
 .family-snap-guide {
-  stroke: #e07a3f;
+  stroke: var(--snap-accent-2);
   stroke-width: 1.5;
   stroke-dasharray: 3 4;
   opacity: 0.85;
@@ -352,7 +393,7 @@ html, body {
   width: 300px;
   background: var(--panel-bg);
   border-left: 1px solid var(--border);
-  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+  box-shadow: -4px 0 16px var(--panel-shadow);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -395,6 +436,7 @@ html, body {
   padding: 7px 9px;
   border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--panel-bg);
   color: var(--text);
   font-family: inherit;
   resize: vertical;
@@ -403,7 +445,7 @@ html, body {
 /* 툴바 버튼과 같은 생김새로 통일 — "이 인물 삭제"만 따로 빨간색으로 튀지 않게 */
 #inspector button {
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--panel-bg);
   color: var(--text);
   padding: 7px 12px;
   border-radius: 8px;
@@ -412,7 +454,7 @@ html, body {
 }
 
 #inspector button:hover {
-  background: #f4f6f9;
+  background: var(--surface);
 }
 
 .f-tags {
@@ -436,7 +478,7 @@ html, body {
   border-radius: 50%;
   overflow: hidden;
   border: 2px dashed var(--border);
-  background: #f8f9fb;
+  background: var(--surface);
   cursor: pointer;
   position: relative;
 }
@@ -480,7 +522,7 @@ html, body {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(20, 25, 35, 0.4);
+  background: var(--overlay);
   align-items: center;
   justify-content: center;
   z-index: 50;
@@ -489,12 +531,13 @@ html, body {
 .modal-overlay.open { display: flex; }
 
 .modal-box {
-  background: #fff;
+  background: var(--panel-bg);
+  color: var(--text);
   border-radius: 14px;
   padding: 22px;
   width: 260px;
   text-align: center;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 10px 30px var(--modal-shadow);
 }
 
 .modal-box h3 { margin: 0 0 8px; font-size: 15px; }
@@ -515,7 +558,8 @@ html, body {
 
 .modal-actions button {
   border: 1px solid var(--border);
-  background: #f8f9fb;
+  background: var(--surface);
+  color: var(--text);
   border-radius: 8px;
   padding: 10px 4px;
   font-size: 13px;
@@ -545,7 +589,7 @@ html, body {
   margin: 0 auto 16px;
   border-radius: 50%;
   overflow: hidden;
-  background: #eef1f5;
+  background: var(--surface);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
@@ -573,7 +617,8 @@ html, body {
 
 .crop-modal-actions button {
   border: 1px solid var(--border);
-  background: #f8f9fb;
+  background: var(--surface);
+  color: var(--text);
   border-radius: 8px;
   padding: 8px 18px;
   font-size: 13px;
@@ -588,7 +633,7 @@ html, body {
   border-color: var(--accent);
 }
 
-.crop-modal-actions button.primary:hover { background: #3560bf; }
+.crop-modal-actions button.primary:hover { background: var(--accent-hover); }
 
 @media (max-width: 640px) {
   #inspector { width: 86vw; }

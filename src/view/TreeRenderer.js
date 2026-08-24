@@ -1,13 +1,13 @@
 import { createCardElement, applyCardData, attachCardDrag } from "../ui/PersonCard.js";
 import { createLineElement, applyLineStyle, updateLinePosition, TYPE_LABEL } from "../ui/RelationshipLine.js";
-import { createTextBoxElement, applyTextBoxData, attachTextBoxDrag, attachTextBoxResize, startTextEdit } from "../ui/TextBox.js";
+import { createTextBoxElement, applyTextBoxData, attachTextBoxDrag, attachTextBoxResize } from "../ui/TextBox.js";
 import { ROW_SPACING, COL_SPACING } from "../core/AutoLayout.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 /** TreeModel의 변화를 구독해 사람 카드(DOM)와 관계선(SVG)을 동기화한다. */
 export class TreeRenderer {
-  constructor({ tree, worldEl, linesEl, camera, store, onCardClick, onLineClick, trashEl }) {
+  constructor({ tree, worldEl, linesEl, camera, store, onCardClick, onLineClick, onTextBoxClick, trashEl }) {
     this.tree = tree;
     this.worldEl = worldEl;
     this.linesEl = linesEl;
@@ -15,6 +15,7 @@ export class TreeRenderer {
     this.store = store;
     this.onCardClick = onCardClick;
     this.onLineClick = onLineClick;
+    this.onTextBoxClick = onTextBoxClick;
     this.trashEl = trashEl;
 
     this.cardEls = new Map();
@@ -147,6 +148,11 @@ export class TreeRenderer {
     for (const [pid, el] of this.cardEls) el.classList.toggle("selected", set.has(pid));
   }
 
+  /** 사람 카드의 setSelected와 같은 역할 — 텍스트 박스 쪽 선택 강조(사이드바가 열려 있는 대상). */
+  setSelectedTextBox(id) {
+    for (const [bid, el] of this.textBoxEls) el.classList.toggle("selected", bid === id);
+  }
+
   /** photoId(업로드된 Blob)를 우선으로, 없으면 photoUrl(외부 링크)로 폴백한다. */
   async _resolvePhotoUrl(person) {
     if (person.photoId) {
@@ -250,9 +256,7 @@ export class TreeRenderer {
         }
         this.tree.updateTextBox(box.id, { x: box.x, y: box.y });
       },
-      onClick: () => {
-        startTextEdit(el, box.text, (text) => this.tree.updateTextBox(box.id, { text }));
-      },
+      onClick: () => this.onTextBoxClick && this.onTextBoxClick(box.id),
     });
 
     const resizeDrag = attachTextBoxResize(el, {

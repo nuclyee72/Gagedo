@@ -57,6 +57,7 @@ const renderer = new TreeRenderer({
   store,
   onCardClick: handleCardClick,
   onLineClick: handleLineClick,
+  onTextBoxClick: handleTextBoxClick,
   trashEl,
 });
 
@@ -135,6 +136,7 @@ const backgroundDrag = new DragController(viewportEl, {
   onClick: () => {
     if (connectMode) return;
     renderer.setSelected(null);
+    renderer.setSelectedTextBox(null);
     inspector.close();
   },
 });
@@ -161,8 +163,19 @@ function handleCardClick(id) {
     return;
   }
   renderer.setSelected(id);
+  renderer.setSelectedTextBox(null);
   const person = tree.people.get(id);
   if (person) inspector.open(person);
+}
+
+/** 인물 카드와 똑같이, 텍스트 박스를 클릭하면 오른쪽 사이드바를 띄워 내용/글자 크기를 고치게 한다. */
+function handleTextBoxClick(id) {
+  if (connectMode) return; // 텍스트 박스는 관계 연결 대상이 아니다.
+  const box = tree.textBoxes.get(id);
+  if (!box) return;
+  renderer.setSelected(null);
+  renderer.setSelectedTextBox(id);
+  inspector.openTextBox(box);
 }
 
 /** 유형별로 고른 인물 순서를 실제 관계(들)로 바꾼다. */
@@ -258,9 +271,11 @@ function updateEmptyHint() {
 }
 tree.onChange(updateEmptyHint);
 
-// 어떤 경로로든(휴지통 드래그 등) 인물이 삭제되면, 그 인물이 지금 인스펙터에 열려 있던 경우 닫는다.
+// 어떤 경로로든(휴지통 드래그 등) 인물/텍스트 박스가 삭제되면, 그게 지금 인스펙터에 열려 있던
+// 경우 닫는다.
 tree.onChange((type, payload) => {
   if (type === "person:remove" && inspector.person?.id === payload) inspector.close();
+  if (type === "textbox:remove" && inspector.textBox?.id === payload) inspector.close();
 });
 
 let saveTimer = null;
@@ -280,6 +295,7 @@ document.addEventListener("keydown", (e) => {
   if (connectMode) exitConnectMode();
   inspector.close();
   renderer.setSelected(null);
+  renderer.setSelectedTextBox(null);
 });
 
 async function init() {

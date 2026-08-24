@@ -13,11 +13,27 @@ export class InspectorPanel {
     this.onImageChange = onImageChange;
     this.getAllTags = getAllTags;
     this.person = null;
+    this.textBox = null;
+    this.mode = null; // "person" | "textbox" — 지금 사이드바가 어느 걸 보여주고 있는지
     this.cropEditor = new ImageCropEditor(cropModalEl);
-    this._buildSkeleton();
+    this._buildPersonSkeleton();
+    this.mode = "person";
+
+    // 텍스트 박스는 사이드바를 연 채로도 캔버스의 모서리 핸들로 글자 크기를 바꿀 수 있어서(둘 다
+    // 같은 걸 조작하는 두 가지 방법), 그쪽에서 바뀐 값을 사이드바 입력창에도 바로 반영해줘야 한다.
+    tree.onChange((type, payload) => {
+      if (type !== "textbox:update") return;
+      if (this.mode !== "textbox" || !this.textBox || this.textBox.id !== payload.id) return;
+      this.textBox = payload;
+      const textEl = this.el.querySelector(".tb-text");
+      const fontEl = this.el.querySelector(".tb-fontsize");
+      // 지금 사용자가 타이핑 중인 입력창은 건드리지 않는다(커서 위치가 튀는 걸 막기 위해).
+      if (textEl && document.activeElement !== textEl) textEl.value = payload.text || "";
+      if (fontEl && document.activeElement !== fontEl) fontEl.value = payload.fontSize;
+    });
   }
 
-  _buildSkeleton() {
+  _buildPersonSkeleton() {
     this.el.innerHTML = `
       <div class="inspector-header">
         <strong>인물 정보</strong>
@@ -114,6 +130,9 @@ export class InspectorPanel {
 
     // 클립보드 이미지 붙여넣기: 인물이 선택된 동안은 어디에 포커스가 있어도 이미지 붙여넣기만 가로챈다.
     // (텍스트만 있는 붙여넣기는 그대로 두어 이름/태그/메모 입력에 영향을 주지 않는다.)
+    // _buildPersonSkeleton은 이제(텍스트 박스 모드와 오가며) 여러 번 불릴 수 있으므로, 예전 리스너가
+    // 쌓이지 않도록 먼저 떼어낸다 — document에 건 리스너라 DOM이 갈아끼워져도 저절로 안 없어진다.
+    if (this._onPaste) document.removeEventListener("paste", this._onPaste);
     this._onPaste = async (e) => {
       if (!this.person) return;
       const items = [...(e.clipboardData?.items || [])];
@@ -253,6 +272,11 @@ export class InspectorPanel {
   }
 
   async open(person) {
+    if (this.mode !== "person") {
+      this._buildPersonSkeleton();
+      this.mode = "person";
+    }
+    this.textBox = null;
     this.person = person;
     this.el.querySelector(".f-name").value = person.name || "";
     this.el.querySelector(".f-notes").value = person.notes || "";
@@ -269,8 +293,59 @@ export class InspectorPanel {
     this._setPreview(previewUrl);
   }
 
+  /** 인물 카드처럼, 텍스트 박스를 클릭했을 때도 사이드바를 띄워서 내용/글자 크기를 고칠 수 있게 한다. */
+  openTextBox(box) {
+    if (this.mode !== "textbox") {
+      this._buildTextBoxSkeleton();
+      this.mode = "textbox";
+    }
+    this.person = null;
+    this.textBox = box;
+    this.el.querySelector(".tb-text").value = box.text || "";
+    this.el.querySelector(".tb-fontsize").value = box.fontSize;
+    this.el.classList.add("open");
+  }
+
+  _buildTextBoxSkeleton() {
+    this.el.innerHTML = `
+      <div class="inspector-header">
+        <strong>텍스트 박스</strong>
+        <button type="button" class="inspector-close" aria-label="닫기">×</button>
+      </div>
+      <label>내용
+        <textarea class="tb-text" rows="5" placeholder="텍스트 입력"></textarea>
+      </label>
+      <label>글자 크기
+        <input type="number" class="tb-fontsize" min="10" max="72" step="1">
+      </label>
+      <button type="button" class="tb-delete">이 텍스트 박스 삭제</button>
+    `;
+
+    this.el.querySelector(".inspector-close").onclick = () => this.close();
+
+    this.el.querySelector(".tb-text").addEventListener("input", (e) => {
+      if (!this.textBox) return;
+      this.tree.updateTextBox(this.textBox.id, { text: e.target.value });
+    });
+
+    this.el.querySelector(".tb-fontsize").addEventListener("input", (e) => {
+      if (!this.textBox) return;
+      const next = Math.min(72, Math.max(10, parseInt(e.target.value, 10) || this.textBox.fontSize));
+      this.tree.updateTextBox(this.textBox.id, { fontSize: next });
+    });
+
+    this.el.querySelector(".tb-delete").addEventListener("click", () => {
+      if (!this.textBox) return;
+      if (confirm("이 텍스트 박스를 삭제할까요?")) {
+        this.tree.removeTextBox(this.textBox.id);
+        this.close();
+      }
+    });
+  }
+
   close() {
     this.person = null;
+    this.textBox = null;
     this.el.classList.remove("open");
   }
 

@@ -323,53 +323,48 @@ html, body {
   z-index: 15; /* 사람 카드/관계선보다 위, 항상 라벨처럼 보이도록 */
 }
 
+/* 항상 보이는 흰(패널 배경) 둥근 사각형 카드 — 사람 카드처럼 무엇이든 그 위에 놓인 걸 알 수 있게. */
 .text-box-content {
   width: 10em; /* em 단위라 글자 크기와 함께 늘어난다(리사이즈 = 글자 크기 변경) */
   min-height: 1.4em;
-  padding: 6px 8px;
-  border: 1px dashed transparent;
-  border-radius: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-bg);
+  box-shadow: 0 2px 8px var(--shadow);
   color: var(--text);
   font-size: 20px; /* JS(TextBox.js)가 인라인으로 덮어쓴다 */
   line-height: 1.4;
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  outline: none;
   cursor: pointer;
-  user-select: none; /* 편집 모드가 아닐 땐 드래그와 헷갈리지 않게 선택 자체를 막는다 */
+  user-select: none; /* 클릭하면 인라인 편집이 아니라 사이드바가 열리므로, 드래그와 헷갈리지 않게 선택은 막는다 */
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .text-box:hover .text-box-content {
-  border-color: var(--border);
-  background: var(--panel-bg);
-}
-
-/* #app에 걸린 전역 user-select:none(드래그 중 텍스트 선택 방지, ID 선택자라 명시도가 높다)을
-   편집 모드에서는 다시 풀어야 하므로, 이기도록 앞에 #app을 붙여 명시도를 맞춘다. */
-#app .text-box.editing .text-box-content {
-  cursor: text;
-  user-select: text;
   border-color: var(--accent);
-  background: var(--panel-bg);
 }
 
+.text-box.selected .text-box-content {
+  border-color: var(--accent);
+  box-shadow: 0 2px 12px var(--accent-glow);
+}
+
+/* 항상 보이는 리사이즈 손잡이(모서리) — 대각선 줄무늬로 "드래그해서 크기 조절"이라는 걸 표시. */
 .text-box-resize {
   position: absolute;
-  right: -5px;
-  bottom: -5px;
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  background: var(--accent);
+  right: -7px;
+  bottom: -7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background:
+    linear-gradient(135deg, transparent 0 40%, var(--panel-bg) 40% 46%, transparent 46% 60%, var(--panel-bg) 60% 66%, transparent 66%),
+    var(--accent);
   border: 2px solid var(--panel-bg);
+  box-shadow: 0 1px 4px var(--shadow);
   cursor: nwse-resize;
-  opacity: 0;
-  transition: opacity 0.1s ease;
-}
-
-.text-box:hover .text-box-resize,
-.text-box.editing .text-box-resize {
-  opacity: 1;
 }
 
 /* ---------- Relationship lines (SVG) ---------- */
@@ -496,6 +491,7 @@ html, body {
 }
 
 #inspector input[type="text"],
+#inspector input[type="number"],
 #inspector textarea {
   font-size: 14px;
   padding: 7px 9px;

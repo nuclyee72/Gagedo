@@ -13,11 +13,25 @@ export class UndoManager {
     this.undoStack = [];
     this.redoStack = [];
     this._restoring = false;
+    // UndoManager는 main.js가 init()으로 실제 데이터를 비동기로 불러오기 전, 아직 빈 트리일 때
+    // 생성된다. init()의 tree.loadJSON()도 다른 reset과 똑같이 "reset" 이벤트를 쏘는데, 그걸
+    // 그냥 일반 변경으로 취급해 버리면 "생성 시점의 빈 트리"가 되돌리기 스택에 들어가 버려서 —
+    // 새로고침 직후 아무 작업이나 한 번 하고 바로 실행취소하면 방금 한 일이 아니라 전체가 텅 빈
+    // 상태로 되돌아가는 버그가 있었다. 첫 reset(=최초 로드)만은 스택에 안 쌓고 기준선만 맞춘다.
+    this._loaded = false;
     this._timer = null;
     this._lastSnapshot = this._snapshot();
 
-    tree.onChange(() => {
+    tree.onChange((type) => {
       if (this._restoring) return;
+      if (type === "reset" && !this._loaded) {
+        this._loaded = true;
+        clearTimeout(this._timer);
+        this._timer = null;
+        this._lastSnapshot = this._snapshot();
+        return;
+      }
+      this._loaded = true;
       if (this._timer === null) {
         this.undoStack.push(this._lastSnapshot);
         if (this.undoStack.length > this.limit) this.undoStack.shift();

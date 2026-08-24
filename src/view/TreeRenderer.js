@@ -1,5 +1,6 @@
 import { createCardElement, applyCardData, attachCardDrag } from "../ui/PersonCard.js";
 import { createLineElement, applyLineStyle, updateLinePosition, TYPE_LABEL } from "../ui/RelationshipLine.js";
+import { createTextBoxElement, applyTextBoxData, attachTextBoxDrag, attachTextBoxResize, startTextEdit } from "../ui/TextBox.js";
 import { ROW_SPACING, COL_SPACING } from "../core/AutoLayout.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -20,6 +21,9 @@ export class TreeRenderer {
     this.cardDrags = new Map(); // personId -> DragController (카드 삭제 시 destroy()로 정리해야 함)
     this.lineEls = new Map();
     this.photoUrls = new Map(); // photoId -> objectURL 캐시
+
+    this.textBoxEls = new Map();
+    this.textBoxDrags = new Map(); // textBoxId -> { moveDrag, resizeDrag } (둘 다 destroy() 필요)
 
     this._editingRelId = null; // 지금 텍스트를 편집 중인 관계선 id(한 번에 하나만)
 
@@ -114,11 +118,14 @@ export class TreeRenderer {
 
   async _doRenderAll() {
     for (const drag of this.cardDrags.values()) drag.destroy();
+    for (const drags of this.textBoxDrags.values()) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); }
     this.worldEl.innerHTML = "";
     this.linesEl.innerHTML = "";
     this.cardEls.clear();
     this.cardDrags.clear();
     this.lineEls.clear();
+    this.textBoxEls.clear();
+    this.textBoxDrags.clear();
     // linesEl을 통째로 비웠으니, 스냅 가이드 엘리먼트도 DOM에서 떨어져 나갔다 — 참조를 들고 있으면
     // 다음 번엔 그 죽은 엘리먼트에다 속성만 바꾸고 화면엔 안 나타나는 버그가 생기므로 같이 지운다.
     this._snapGuideH = null;
@@ -126,6 +133,8 @@ export class TreeRenderer {
     this._extraGuideEls = null;
     for (const person of this.tree.people.values()) await this._addCard(person);
     for (const rel of this.tree.relationships.values()) this._addLine(rel);
+    // 텍스트 박스는 사람 카드 위에 겹쳐 놓고 쓰는 경우가 많아, 항상 그 위(DOM 뒤쪽 = 위 레이어)에 오게 마지막에 그린다.
+    for (const box of this.tree.textBoxes.values()) this._addTextBox(box);
   }
 
   setSelected(id) {
@@ -205,6 +214,62 @@ export class TreeRenderer {
     this.worldEl.appendChild(el);
     this.cardEls.set(person.id, el);
     this.cardDrags.set(person.id, drag);
+  }
+
+  /** 자유 텍스트 오브젝트 카드 — 사람 카드와 달리 스냅 없이 자유 이동, 클릭하면 바로 편집. */
+  _addTextBox(box) {
+    const el = createTextBoxElement(box);
+
+    let rawX = box.x;
+    let rawY = box.y;
+
+    const moveDrag = attachTextBoxDrag(el, {
+      getScale: () => this.camera.scale,
+      onDragStart: () => {
+        rawX = box.x;
+        rawY = box.y;
+        this._showTrash();
+      },
+      onMove: (dx, dy, e) => {
+        rawX += dx;
+        rawY += dy;
+        box.x = rawX;
+        box.y = rawY;
+        el.style.left = `${box.x}px`;
+        el.style.top = `${box.y}px`;
+        this._setTrashArmed(e && this._isOverTrash(e.clientX, e.clientY));
+      },
+      onMoveEnd: (e) => {
+        const droppedOnTrash = e && this._isOverTrash(e.clientX, e.clientY);
+        this._hideTrash();
+        if (droppedOnTrash) {
+          if (confirm("이 텍스트 박스를 삭제할까요?")) {
+            this.tree.removeTextBox(box.id);
+            return;
+          }
+        }
+        this.tree.updateTextBox(box.id, { x: box.x, y: box.y });
+      },
+      onClick: () => {
+        startTextEdit(el, box.text, (text) => this.tree.updateTextBox(box.id, { text }));
+      },
+    });
+
+    const resizeDrag = attachTextBoxResize(el, {
+      getScale: () => this.camera.scale,
+      onResize: (dxWorld) => {
+        const next = Math.min(72, Math.max(10, Math.round(box.fontSize + dxWorld * 0.4)));
+        el.querySelector(".text-box-content").style.fontSize = `${next}px`;
+      },
+      onResizeEnd: () => {
+        const next = parseFloat(el.querySelector(".text-box-content").style.fontSize) || box.fontSize;
+        this.tree.updateTextBox(box.id, { fontSize: next });
+      },
+    });
+
+    this.worldEl.appendChild(el);
+    this.textBoxEls.set(box.id, el);
+    this.textBoxDrags.set(box.id, { moveDrag, resizeDrag });
   }
 
   /**
@@ -662,6 +727,22 @@ export class TreeRenderer {
         // 트렁크/버스 바 구조를 되돌려야 할 수도 있다고 보고 모든 부모-자식(부모2) 선을 다시 그린다.
         this._refreshAllParentChildLines();
         break;
+      case "textbox:add":
+        this._addTextBox(payload);
+        break;
+      case "textbox:update": {
+        const el = this.textBoxEls.get(payload.id);
+        if (el) applyTextBoxData(el, payload);
+        break;
+      }
+      case "textbox:remove": {
+        this.textBoxEls.get(payload)?.remove();
+        this.textBoxEls.delete(payload);
+        const drags = this.textBoxDrags.get(payload);
+        if (drags) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); }
+        this.textBoxDrags.delete(payload);
+        break;
+      }
       case "reset":
         await this.renderAll();
         break;

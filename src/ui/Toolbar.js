@@ -10,15 +10,13 @@ export class Toolbar {
       <div class="toolbar-group">
         <button type="button" data-action="add-person">+인물</button>
         <button type="button" data-action="connect" class="toggle">&amp;관계</button>
+        <button type="button" data-action="add-textbox">텍스트</button>
       </div>
       <div class="toolbar-group">
         <button type="button" data-action="zoom-out" aria-label="축소">－</button>
         <button type="button" data-action="zoom-reset">100%</button>
         <button type="button" data-action="zoom-in" aria-label="확대">＋</button>
         <button type="button" data-action="fit" title="전체보기" aria-label="전체보기">⛶</button>
-      </div>
-      <div class="toolbar-group">
-        <button type="button" data-action="auto-arrange" title="세대별로 가로열을 맞춰 자동으로 정렬합니다">정렬</button>
       </div>
       <div class="toolbar-group">
         <button type="button" data-action="undo" title="실행취소" aria-label="실행취소">↶</button>

@@ -1,7 +1,6 @@
 import { TreeModel } from "./core/Tree.js";
 import { TreeStore } from "./core/db.js";
 import { UndoManager } from "./core/UndoManager.js";
-import { computeAutoLayout } from "./core/AutoLayout.js";
 import { Camera } from "./view/Camera.js";
 import { DragController } from "./view/DragController.js";
 import { TreeRenderer } from "./view/TreeRenderer.js";
@@ -92,15 +91,16 @@ const toolbar = new Toolbar(toolbarEl, {
     if (connectMode) exitConnectMode();
     else enterConnectMode();
   },
+  addTextbox: () => {
+    const rect = viewportEl.getBoundingClientRect();
+    const { x, y } = camera.screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    const jitter = () => (Math.random() - 0.5) * 40;
+    tree.addTextBox({ x: x + jitter(), y: y + jitter() });
+  },
   zoomIn: () => zoomAtCenter(1.25),
   zoomOut: () => zoomAtCenter(1 / 1.25),
   zoomReset: () => camera.resetView(),
   fit: () => camera.fitToContent(tree.getBounds()),
-  autoArrange: () => {
-    const positions = computeAutoLayout(tree); // 세대 간 세로 간격은 고정값(240) 사용
-    for (const [id, pos] of positions) tree.updatePerson(id, { x: pos.x, y: pos.y });
-    if (positions.size) camera.fitToContent(tree.getBounds());
-  },
   undo: () => undoMgr.performUndo(),
   redo: () => undoMgr.performRedo(),
   export: doExport,
@@ -126,9 +126,9 @@ function zoomAtCenter(factor) {
   camera.zoomBy(factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
 }
 
-// 배경 드래그 = 캔버스 팬 / 배경 클릭 = 선택 해제 (카드 위에서는 동작하지 않도록 filter로 제외)
+// 배경 드래그 = 캔버스 팬 / 배경 클릭 = 선택 해제 (카드/텍스트 박스 위에서는 동작하지 않도록 filter로 제외)
 const backgroundDrag = new DragController(viewportEl, {
-  filter: (e) => !e.target.closest(".person-card"),
+  filter: (e) => !e.target.closest(".person-card") && !e.target.closest(".text-box"),
   onDragStart: () => camera.setTransforming(true),
   onDragMove: (dx, dy) => camera.pan(dx, dy),
   onDragEnd: () => camera.setTransforming(false),

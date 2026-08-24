@@ -8,6 +8,7 @@ export class TreeModel {
   constructor() {
     this.people = new Map(); // id -> Person
     this.relationships = new Map(); // id -> Relationship
+    this.textBoxes = new Map(); // id -> TextBox (사람/관계와 무관한 자유 메모용 텍스트 오브젝트)
     this.view = { panX: 0, panY: 0, scale: 1 };
     this._listeners = new Set();
   }
@@ -72,8 +73,27 @@ export class TreeModel {
     this._emit("relationship:remove", id);
   }
 
+  addTextBox({ x = 0, y = 0, text = "텍스트", fontSize = 20 } = {}) {
+    const box = { id: uuid(), x, y, text, fontSize };
+    this.textBoxes.set(box.id, box);
+    this._emit("textbox:add", box);
+    return box;
+  }
+
+  updateTextBox(id, patch) {
+    const box = this.textBoxes.get(id);
+    if (!box) return;
+    Object.assign(box, patch);
+    this._emit("textbox:update", box);
+  }
+
+  removeTextBox(id) {
+    if (!this.textBoxes.delete(id)) return;
+    this._emit("textbox:remove", id);
+  }
+
   getBounds() {
-    const pts = [...this.people.values()];
+    const pts = [...this.people.values(), ...this.textBoxes.values()];
     if (!pts.length) return null;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of pts) {
@@ -89,6 +109,7 @@ export class TreeModel {
     return {
       people: [...this.people.values()],
       relationships: [...this.relationships.values()],
+      textBoxes: [...this.textBoxes.values()],
       view: this.view,
     };
   }
@@ -97,6 +118,7 @@ export class TreeModel {
   loadJSON(data) {
     this.people = new Map((data.people || []).map((p) => [p.id, p]));
     this.relationships = new Map((data.relationships || []).map((r) => [r.id, r]));
+    this.textBoxes = new Map((data.textBoxes || []).map((b) => [b.id, b]));
     this.view = data.view || { panX: 0, panY: 0, scale: 1 };
     this._emit("reset", null);
   }

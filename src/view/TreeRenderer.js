@@ -259,24 +259,38 @@ export class TreeRenderer {
       onClick: () => this.onTextBoxClick && this.onTextBoxClick(box.id),
     });
 
-    // dx는 매 이동마다 "증분"으로 들어오므로(누적값이 아님), 사람 카드의 rawX/rawY와 똑같이
-    // 드래그 시작 시점의 값을 기준 삼아 직접 누적해야 한다 — 그러지 않고 매번 box.fontSize(원래
-    // 값, 드래그 중엔 안 바뀜)에 그때그때의 작은 증분만 더하면, 실제 이동 거리와 무관하게 매
-    // 프레임 거의 같은 값 근처에서 오락가락해서 부들부들 떨리는 것처럼 보이는 버그가 있었다.
-    let rawFontSize = box.fontSize;
+    // 모서리 핸들은 글자 크기가 아니라 상자의 폭/높이만 1:1로 바꾼다("모서리 위치를 직접 옮기는"
+    // 느낌 — 배율/자동 조절 없음). 글자 크기는 사이드바에서만 바꾼다. dx/dy는 매 이동마다
+    // "증분"으로 들어오므로(누적값이 아님), 사람 카드의 rawX/rawY와 똑같이 드래그 시작 시점의
+    // 값을 기준 삼아 직접 누적해야 한다 — 안 그러면 실제 이동 거리와 무관하게 매 이벤트마다
+    // 거의 같은 값 근처에서 오락가락해서 떨리는 것처럼 보이는 버그가 있었다.
+    const MIN_W = 40;
+    const MIN_H = 24;
+    let rawW = box.width ?? 200;
+    let rawH = box.height ?? 50;
     const resizeDrag = attachTextBoxResize(el, {
       getScale: () => this.camera.scale,
       onResizeStart: () => {
-        rawFontSize = box.fontSize;
+        // box.width/height가 없는(width/height 필드가 생기기 전에 저장된) 예전 데이터일 수도
+        // 있으니, applyTextBoxData가 이미 기본값을 채워 넣은 실제 DOM 값을 기준으로 삼는다.
+        const content = el.querySelector(".text-box-content");
+        rawW = parseFloat(content.style.width) || box.width || 200;
+        rawH = parseFloat(content.style.height) || box.height || 50;
       },
-      onResize: (dxWorld) => {
-        rawFontSize += dxWorld * 0.4;
-        const next = Math.min(72, Math.max(10, Math.round(rawFontSize)));
-        el.querySelector(".text-box-content").style.fontSize = `${next}px`;
+      onResize: (dxWorld, dyWorld) => {
+        rawW += dxWorld;
+        rawH += dyWorld;
+        const w = Math.max(MIN_W, Math.round(rawW));
+        const h = Math.max(MIN_H, Math.round(rawH));
+        const content = el.querySelector(".text-box-content");
+        content.style.width = `${w}px`;
+        content.style.height = `${h}px`;
       },
       onResizeEnd: () => {
-        const next = parseFloat(el.querySelector(".text-box-content").style.fontSize) || box.fontSize;
-        this.tree.updateTextBox(box.id, { fontSize: next });
+        const content = el.querySelector(".text-box-content");
+        const w = parseFloat(content.style.width) || box.width;
+        const h = parseFloat(content.style.height) || box.height;
+        this.tree.updateTextBox(box.id, { width: w, height: h });
       },
     });
 

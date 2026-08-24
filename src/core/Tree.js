@@ -73,8 +73,10 @@ export class TreeModel {
     this._emit("relationship:remove", id);
   }
 
-  addTextBox({ x = 0, y = 0, text = "텍스트", fontSize = 20 } = {}) {
-    const box = { id: uuid(), x, y, text, fontSize };
+  addTextBox({ x = 0, y = 0, text = "텍스트", fontSize = 20, width = 200, height = 50 } = {}) {
+    // width/height는 fontSize와 무관한 독립된 값이다 — 모서리로 크기를 조절해도 글자 크기는
+    // 안 바뀌고(사이드바에서만 바꿈), 상자 크기만 바뀐다.
+    const box = { id: uuid(), x, y, text, fontSize, width, height };
     this.textBoxes.set(box.id, box);
     this._emit("textbox:add", box);
     return box;

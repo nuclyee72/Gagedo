@@ -343,10 +343,11 @@ html, body {
   z-index: 15; /* 사람 카드/관계선보다 위, 항상 라벨처럼 보이도록 */
 }
 
-/* 항상 보이는 흰(패널 배경) 둥근 사각형 카드 — 사람 카드처럼 무엇이든 그 위에 놓인 걸 알 수 있게. */
+/* 항상 보이는 흰(패널 배경) 둥근 사각형 카드 — 사람 카드처럼 무엇이든 그 위에 놓인 걸 알 수 있게.
+   width/height는 JS(TextBox.js)가 box.width/height를 그대로 픽셀로 넣는다 — 글자 크기와는
+   무관한 독립된 값(모서리로 상자 크기만 바꾸고, 글자 크기는 사이드바에서만 바꾼다). */
 .text-box-content {
-  width: 10em; /* em 단위라 글자 크기와 함께 늘어난다(리사이즈 = 글자 크기 변경) */
-  min-height: 1.4em;
+  box-sizing: border-box; /* width/height에 padding/border가 포함되게(모서리 드래그가 정확히 그 크기가 되도록) */
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -357,6 +358,7 @@ html, body {
   line-height: 1.4;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  overflow: hidden; /* 상자보다 글자가 많으면(작게 줄였을 때) 넘치지 않고 잘리게 */
   cursor: pointer;
   user-select: none; /* 클릭하면 인라인 편집이 아니라 사이드바가 열리므로, 드래그와 헷갈리지 않게 선택은 막는다 */
   transition: border-color 0.15s ease, box-shadow 0.15s ease;

@@ -414,10 +414,17 @@ export class TreeRenderer {
 
   /**
    * person이 "부모-자식(부모2)" 관계의 자식이고 부모 두 명을 모두 확인할 수 있으면, 그 부모 쌍을
-   * 기준으로 한 가로(x)/세로(y) 스냅 후보를 만든다 — 자동 정렬이 형제들을 배치하는 규칙과 같은
-   * 지점들이라, 손으로 옮겨도 "자동 정렬했을 때의 자리"에 자연스럽게 달라붙는다("클리핑").
-   *   1) 부모 선(부부 사이 구간)의 정중앙 — "선의 중심"
-   *   2) 그 구간을 (형제 수)등분한 지점들 — "n등분된곳" (자신을 포함한 형제 수만큼 등분)
+   * 기준으로 한 가로(x)/세로(y) 스냅 후보를 만든다 — 자동 정렬(AutoLayout.js)이 형제들을 배치하는
+   * 규칙과 "정확히 같은" 지점들이라야, 손으로 옮겨도 "자동 정렬했을 때의 자리"에 자연스럽게
+   * 달라붙는다("클리핑").
+   *
+   * AutoLayout.js는 부모 사이의 실제 간격과 무관하게 트렁크(부모 쌍의 x 중점)를 중심으로 형제들을
+   * COL_SPACING 고정 간격으로 나열한다(offsets[0]=0에서 시작해 매번 colSpacing씩 더함 → 블록
+   * 전체를 trunkX - blockWidth/2 만큼 왼쪽으로 밀어 중앙 정렬). 예전엔 "부모 사이 구간을 형제 수로
+   * 등분"하는 다른 공식을 썼는데, 부모 두 사람 사이 거리가 (형제 수-1)*COL_SPACING과 정확히 같지
+   * 않으면(거의 항상 그렇다) 후보 지점이 실제 자동 정렬 결과와 어긋나 버려서 — 카드를 정확히 "있어야
+   * 할 자리"로 끌고 가도 그 근처에 스냅 후보가 없어 전혀 달라붙지 않는 문제가 있었다. 이제 그 공식을
+   * AutoLayout.js와 동일하게 맞춘다: 트렁크 중심으로 COL_SPACING 간격의 n개 슬롯.
    * 세로(y)는 부모 세대보다 정확히 한 세대(ROW_SPACING) 아래인 지점.
    * (표준 칸 간격 스냅은 이제 _templateSnapCandidates가 모든 인물 기준으로 따로 처리한다.)
    */
@@ -429,25 +436,55 @@ export class TreeRenderer {
         break;
       }
     }
-    if (!rel) return null;
-    const parent1 = this.tree.people.get(rel.fromId);
-    const parent2 = this._partnerFor(rel, parent1);
-    if (!parent1 || !parent2) return null;
+    if (rel) {
+      const parent1 = this.tree.people.get(rel.fromId);
+      const parent2 = this._partnerFor(rel, parent1);
+      if (!parent1 || !parent2) return null;
 
-    const n = this._siblingGroup(rel).length; // 이 사람 자신도 포함된, 이 부모 쌍의 전체 자식 수
-    const trunkX = (parent1.x + parent2.x) / 2;
-    const parentY = (parent1.y + parent2.y) / 2;
+      const n = this._siblingGroup(rel).length; // 이 사람 자신도 포함된, 이 부모 쌍의 전체 자식 수
+      const trunkX = (parent1.x + parent2.x) / 2;
+      const parentY = (parent1.y + parent2.y) / 2;
 
-    const xCandidates = [{ x: trunkX }]; // 1) 선의 중심
-    if (n >= 2) {
-      for (let k = 1; k < n; k++) {
-        xCandidates.push({ x: parent1.x + (parent2.x - parent1.x) * (k / n) }); // 2) n등분점
+      // AutoLayout.js와 동일: 트렁크를 중심으로 COL_SPACING 간격, n개 슬롯(형제 수가 짝수든 홀수든
+      // 정중앙 기준으로 좌우 대칭).
+      const mid = (n - 1) / 2;
+      const xCandidates = [];
+      for (let i = 0; i < n; i++) {
+        xCandidates.push({ x: trunkX + (i - mid) * COL_SPACING });
       }
+
+      const yCandidates = [{ y: parentY + ROW_SPACING }]; // 부모 세대 + 1
+
+      return { xCandidates, yCandidates, trunkX, parentY };
     }
 
-    const yCandidates = [{ y: parentY + ROW_SPACING }]; // 부모 세대 + 1
+    // "부모-자식(부모1)"(솔로 부모) — AutoLayout.js는 배우자 유무와 상관없이 그 부모 한 명만
+    // 기준(anchorIds=[rel.fromId])으로 자식들을 중앙 정렬한다. 예전엔 이 경우 family snap 후보가
+    // 아예 없어서(부부 트렁크가 없다는 이유로), 형제가 둘 이상인 솔로 부모 자식은 항상 안 붙었다.
+    let soloRel = null;
+    for (const r of this.tree.relationships.values()) {
+      if (r.type === "parent-child-solo" && r.toId === person.id) {
+        soloRel = r;
+        break;
+      }
+    }
+    if (!soloRel) return null;
+    const parent = this.tree.people.get(soloRel.fromId);
+    if (!parent) return null;
 
-    return { xCandidates, yCandidates, trunkX, parentY };
+    const siblings = [];
+    for (const r of this.tree.relationships.values()) {
+      if (r.type === "parent-child-solo" && r.fromId === soloRel.fromId) siblings.push(r);
+    }
+    const n = siblings.length;
+    const mid = (n - 1) / 2;
+    const xCandidates = [];
+    for (let i = 0; i < n; i++) {
+      xCandidates.push({ x: parent.x + (i - mid) * COL_SPACING });
+    }
+    const yCandidates = [{ y: parent.y + ROW_SPACING }];
+
+    return { xCandidates, yCandidates, trunkX: parent.x, parentY: parent.y };
   }
 
   /**

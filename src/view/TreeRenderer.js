@@ -35,7 +35,13 @@ export class TreeRenderer {
       const labelEl = e.target.closest(".rel-line-label, .rel-line-label-hit");
       if (labelEl) {
         const g = labelEl.closest(".rel-line");
-        if (g) this._startLabelEdit(g.dataset.id);
+        if (g) {
+          // 라벨을 클릭해도(선 자체를 클릭했을 때와 마찬가지로) 사이드바가 함께 열리게 해서,
+          // 어디를 클릭하든 일관되게 편집 패널로 이어지게 한다. 그 자리 즉석 편집(_startLabelEdit)은
+          // 보너스 단축 경로로 그대로 남겨둔다 — 값이 tree.relationships를 통해 사이드바와 항상 같이 맞는다.
+          this.onLineClick(g.dataset.id);
+          this._startLabelEdit(g.dataset.id);
+        }
         return;
       }
       const g = e.target.closest(".rel-line");
@@ -151,6 +157,11 @@ export class TreeRenderer {
   /** 사람 카드의 setSelected와 같은 역할 — 텍스트 박스 쪽 선택 강조(사이드바가 열려 있는 대상). */
   setSelectedTextBox(id) {
     for (const [bid, el] of this.textBoxEls) el.classList.toggle("selected", bid === id);
+  }
+
+  /** 사람 카드의 setSelected와 같은 역할 — 관계선 쪽 선택 강조(사이드바가 열려 있는 대상). */
+  setSelectedLine(id) {
+    for (const [rid, el] of this.lineEls) el.classList.toggle("selected", rid === id);
   }
 
   /** photoId(업로드된 Blob)를 우선으로, 없으면 photoUrl(외부 링크)로 폴백한다. */

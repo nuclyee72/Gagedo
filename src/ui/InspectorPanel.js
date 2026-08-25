@@ -1,10 +1,11 @@
 import { fetchRawImageBlob } from "../utils/imageUtils.js";
 import { uuid } from "../utils/uuid.js";
 import { ImageCropEditor } from "./ImageCropEditor.js";
+import { TYPE_DISPLAY_NAME, LINE_STYLE_PRESETS, COLOR_PRESETS, defaultColorFor } from "./RelationshipLine.js";
 
 const DEFAULT_AVATAR = "assets/default-avatar.svg";
 
-/** 선택한 인물의 이름/사진/태그(속성)/메모를 편집하는 우측 패널. */
+/** 선택한 인물/텍스트 박스/관계선의 내용을 편집하는 우측 패널. */
 export class InspectorPanel {
   constructor(el, { tree, store, onImageChange, getAllTags, cropModalEl }) {
     this.el = el;
@@ -14,7 +15,8 @@ export class InspectorPanel {
     this.getAllTags = getAllTags;
     this.person = null;
     this.textBox = null;
-    this.mode = null; // "person" | "textbox" — 지금 사이드바가 어느 걸 보여주고 있는지
+    this.relationship = null;
+    this.mode = null; // "person" | "textbox" | "relationship" — 지금 사이드바가 어느 걸 보여주고 있는지
     this.cropEditor = new ImageCropEditor(cropModalEl);
     this._buildPersonSkeleton();
     this.mode = "person";
@@ -30,6 +32,17 @@ export class InspectorPanel {
       // 지금 사용자가 타이핑 중인 입력창은 건드리지 않는다(커서 위치가 튀는 걸 막기 위해).
       if (textEl && document.activeElement !== textEl) textEl.value = payload.text || "";
       if (fontEl && document.activeElement !== fontEl) fontEl.value = payload.fontSize;
+    });
+
+    // 관계선도 마찬가지 — 캔버스에서 라벨을 그 자리 즉석 편집(_startLabelEdit)해도 사이드바에
+    // 열려 있는 라벨 입력창이 바로 따라와야 한다.
+    tree.onChange((type, payload) => {
+      if (type !== "relationship:update") return;
+      if (this.mode !== "relationship" || !this.relationship || this.relationship.id !== payload.id) return;
+      this.relationship = payload;
+      const labelEl = this.el.querySelector(".rel-label");
+      if (labelEl && document.activeElement !== labelEl) labelEl.value = payload.label || "";
+      this._syncRelationshipColorAndStyle(payload);
     });
   }
 
@@ -343,9 +356,103 @@ export class InspectorPanel {
     });
   }
 
+  /** 인물/텍스트 박스처럼, 관계선을 클릭했을 때도 사이드바를 띄워서 라벨/색/선 종류를 고칠 수 있게 한다. */
+  openRelationship(rel) {
+    if (this.mode !== "relationship") {
+      this._buildRelationshipSkeleton();
+      this.mode = "relationship";
+    }
+    this.person = null;
+    this.textBox = null;
+    this.relationship = rel;
+    this.el.querySelector(".rel-type-display").textContent = TYPE_DISPLAY_NAME[rel.type] || rel.type;
+    this.el.querySelector(".rel-label").value = rel.label || "";
+    this.el.querySelector(".rel-linestyle").value = rel.lineStyle || "";
+    this._syncRelationshipColorAndStyle(rel);
+    this.el.classList.add("open");
+  }
+
+  /** 색상 스와치의 "선택됨" 표시 + 네이티브 color input 값을 rel에 맞춰 갱신한다. */
+  _syncRelationshipColorAndStyle(rel) {
+    const colorInput = this.el.querySelector(".rel-color-input");
+    if (colorInput && document.activeElement !== colorInput) colorInput.value = rel.color || defaultColorFor(rel.type);
+    for (const sw of this.el.querySelectorAll(".rel-color-swatch")) {
+      sw.classList.toggle("active", !!rel.color && sw.dataset.color === rel.color);
+    }
+    const linestyleEl = this.el.querySelector(".rel-linestyle");
+    if (linestyleEl && document.activeElement !== linestyleEl) linestyleEl.value = rel.lineStyle || "";
+  }
+
+  _buildRelationshipSkeleton() {
+    this.el.innerHTML = `
+      <div class="inspector-header">
+        <strong>관계 정보</strong>
+        <button type="button" class="inspector-close" aria-label="닫기">×</button>
+      </div>
+      <label>유형</label>
+      <div class="rel-type-display"></div>
+      <label>라벨
+        <input type="text" class="rel-label" placeholder="예: 장남, 재혼 등">
+      </label>
+      <label>색상</label>
+      <div class="rel-color-swatches">
+        ${COLOR_PRESETS.map((c) => `<button type="button" class="rel-color-swatch" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("")}
+      </div>
+      <div class="rel-color-custom-row">
+        <input type="color" class="rel-color-input" title="직접 고르기">
+        <button type="button" class="rel-color-reset">기본값</button>
+      </div>
+      <label>선 종류
+        <select class="rel-linestyle">
+          <option value="">기본값</option>
+          ${Object.entries(LINE_STYLE_PRESETS).map(([key, { label }]) => `<option value="${key}">${label}</option>`).join("")}
+        </select>
+      </label>
+      <button type="button" class="rel-delete">이 관계선 삭제</button>
+    `;
+
+    this.el.querySelector(".inspector-close").onclick = () => this.close();
+
+    this.el.querySelector(".rel-label").addEventListener("input", (e) => {
+      if (!this.relationship) return;
+      this.tree.updateRelationship(this.relationship.id, { label: e.target.value });
+    });
+
+    for (const sw of this.el.querySelectorAll(".rel-color-swatch")) {
+      sw.addEventListener("click", () => {
+        if (!this.relationship) return;
+        this.tree.updateRelationship(this.relationship.id, { color: sw.dataset.color });
+      });
+    }
+
+    this.el.querySelector(".rel-color-input").addEventListener("input", (e) => {
+      if (!this.relationship) return;
+      this.tree.updateRelationship(this.relationship.id, { color: e.target.value });
+    });
+
+    this.el.querySelector(".rel-color-reset").addEventListener("click", () => {
+      if (!this.relationship) return;
+      this.tree.updateRelationship(this.relationship.id, { color: null });
+    });
+
+    this.el.querySelector(".rel-linestyle").addEventListener("change", (e) => {
+      if (!this.relationship) return;
+      this.tree.updateRelationship(this.relationship.id, { lineStyle: e.target.value || null });
+    });
+
+    this.el.querySelector(".rel-delete").addEventListener("click", () => {
+      if (!this.relationship) return;
+      if (confirm("이 관계선을 삭제할까요?")) {
+        this.tree.removeRelationship(this.relationship.id);
+        this.close();
+      }
+    });
+  }
+
   close() {
     this.person = null;
     this.textBox = null;
+    this.relationship = null;
     this.el.classList.remove("open");
   }
 

@@ -19,6 +19,30 @@ const TYPE_STYLE = {
   custom: { stroke: "#8a8f98", dash: "4 3" },
 };
 
+/** 사이드바에 보여줄 유형 이름(읽기 전용 표시용 — 유형 자체는 바꿀 수 없다). */
+export const TYPE_DISPLAY_NAME = {
+  "parent-child-solo": "부모-자식(부모1)",
+  "parent-child": "부모-자식(부모2)",
+  spouse: "배우자",
+  sibling: "형제자매",
+  custom: "기타",
+};
+
+/** 선 종류 프리셋 — rel.lineStyle에 이 중 하나의 key를 저장한다(없으면 유형 기본 dash를 그대로 씀). */
+export const LINE_STYLE_PRESETS = {
+  solid: { label: "실선", dash: "" },
+  dashed: { label: "파선", dash: "9 5" },
+  dotted: { label: "점선", dash: "2 4" },
+};
+
+/** 사이드바 색상 선택기의 빠른 선택 스와치. rel.color가 없으면(null) 유형 기본색을 그대로 쓴다. */
+export const COLOR_PRESETS = ["#5b6b8c", "#d64545", "#e08a3f", "#d6b83f", "#4f9d6d", "#3f6fd6", "#8a5fd6", "#8a8f98"];
+
+/** rel.color가 없을 때 색상 입력창에 보여줄 그 유형의 기본색(네이티브 color input은 빈 값을 못 받아 필요). */
+export function defaultColorFor(type) {
+  return (TYPE_STYLE[type] || TYPE_STYLE.custom).stroke;
+}
+
 const LABEL_HIT_W = 56;
 const LABEL_HIT_H = 18;
 
@@ -52,9 +76,11 @@ export function createLineElement(rel) {
 export function applyLineStyle(g, rel) {
   const style = TYPE_STYLE[rel.type] || TYPE_STYLE.custom;
   const visible = g.querySelector(".rel-line-visible");
-  visible.setAttribute("stroke", style.stroke);
+  // rel.color/lineStyle이 있으면(사이드바에서 사용자가 직접 고른 값) 유형 기본값 대신 그걸 쓴다.
+  visible.setAttribute("stroke", rel.color || style.stroke);
   visible.setAttribute("stroke-width", "2.5");
-  if (style.dash) visible.setAttribute("stroke-dasharray", style.dash);
+  const dasharray = rel.lineStyle ? LINE_STYLE_PRESETS[rel.lineStyle]?.dash : style.dash;
+  if (dasharray) visible.setAttribute("stroke-dasharray", dasharray);
   else visible.removeAttribute("stroke-dasharray");
 
   const label = g.querySelector(".rel-line-label");

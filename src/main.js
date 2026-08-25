@@ -154,6 +154,7 @@ const backgroundDrag = new DragController(viewportEl, {
     if (connectMode) return;
     renderer.setSelected(null);
     renderer.setSelectedTextBox(null);
+    renderer.setSelectedLine(null);
     inspector.close();
   },
 });
@@ -181,6 +182,7 @@ function handleCardClick(id) {
   }
   renderer.setSelected(id);
   renderer.setSelectedTextBox(null);
+  renderer.setSelectedLine(null);
   const person = tree.people.get(id);
   if (person) inspector.open(person);
 }
@@ -192,6 +194,7 @@ function handleTextBoxClick(id) {
   if (!box) return;
   renderer.setSelected(null);
   renderer.setSelectedTextBox(id);
+  renderer.setSelectedLine(null);
   inspector.openTextBox(box);
 }
 
@@ -221,9 +224,14 @@ function connectStatusText() {
   return hint ? `${base} · ${hint}` : base;
 }
 
+/** 인물 카드/텍스트 박스와 똑같이, 관계선을 클릭하면 오른쪽 사이드바를 띄워 라벨/색/선 종류를 고치게 한다. */
 function handleLineClick(relId) {
-  if (!tree.relationships.get(relId)) return;
-  if (confirm("이 관계선을 삭제할까요?")) tree.removeRelationship(relId);
+  const rel = tree.relationships.get(relId);
+  if (!rel) return;
+  renderer.setSelected(null);
+  renderer.setSelectedTextBox(null);
+  renderer.setSelectedLine(relId);
+  inspector.openRelationship(rel);
 }
 
 /** "관계 연결" 클릭 시 사람을 고르기 전에 관계 유형부터 먼저 고르게 한다. */
@@ -293,6 +301,7 @@ tree.onChange(updateEmptyHint);
 tree.onChange((type, payload) => {
   if (type === "person:remove" && inspector.person?.id === payload) inspector.close();
   if (type === "textbox:remove" && inspector.textBox?.id === payload) inspector.close();
+  if (type === "relationship:remove" && inspector.relationship?.id === payload) inspector.close();
 });
 
 let saveTimer = null;
@@ -313,6 +322,7 @@ document.addEventListener("keydown", (e) => {
   inspector.close();
   renderer.setSelected(null);
   renderer.setSelectedTextBox(null);
+  renderer.setSelectedLine(null);
 });
 
 async function init() {

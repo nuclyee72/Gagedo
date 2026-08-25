@@ -422,6 +422,16 @@ html, body {
   filter: brightness(1.5) saturate(1.1);
 }
 
+/* 사이드바가 열려 있는(선택된) 관계선 강조 — 인물 카드/텍스트 박스의 selected 표시와 같은 결. */
+.rel-line.selected .rel-line-visible {
+  stroke-width: 4;
+  filter: drop-shadow(0 0 3px var(--accent-glow));
+}
+
+:root[data-theme="dark"] .rel-line.selected .rel-line-visible {
+  filter: brightness(1.5) saturate(1.1) drop-shadow(0 0 3px var(--accent-glow));
+}
+
 .rel-line-label {
   font-size: 11px;
   fill: var(--muted);
@@ -527,6 +537,7 @@ html, body {
 
 #inspector input[type="text"],
 #inspector input[type="number"],
+#inspector select,
 #inspector textarea {
   font-size: 14px;
   padding: 7px 9px;
@@ -536,6 +547,63 @@ html, body {
   color: var(--text);
   font-family: inherit;
   resize: vertical;
+}
+
+/* ---------- Relationship inspector (색상/선 종류) ---------- */
+
+.rel-type-display {
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 9px;
+}
+
+.rel-color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* #inspector button(일반 버튼 규칙, ID 선택자라 클래스 하나짜리보다 우선순위가 높다)이 border/
+   padding을 다시 덮어쓰지 않도록, 스와치 관련 규칙은 전부 #inspector로 한 번 더 묶어 우선순위를
+   맞춘다. */
+#inspector .rel-color-swatch {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+
+#inspector .rel-color-swatch:hover { transform: scale(1.1); }
+
+#inspector .rel-color-swatch.active {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.rel-color-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rel-color-input {
+  width: 44px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  cursor: pointer;
+}
+
+.rel-color-reset {
+  flex: 1;
 }
 
 /* 툴바 버튼과 같은 생김새로 통일 — "이 인물 삭제"만 따로 빨간색으로 튀지 않게 */

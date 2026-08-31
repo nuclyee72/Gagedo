@@ -17,6 +17,8 @@ const inspectorEl = document.getElementById("inspector");
 const emptyHintEl = document.getElementById("empty-hint");
 const trashEl = document.getElementById("trash-drop");
 const cropModalEl = document.getElementById("crop-modal");
+const marqueeBoxEl = document.getElementById("marquee-box");
+const bulkToolbarEl = document.getElementById("bulk-toolbar");
 
 const tree = new TreeModel();
 const store = new TreeStore();
@@ -98,6 +100,8 @@ const toolbar = new Toolbar(toolbarEl, {
     connectPicks = [];
     toolbar.setConnectMode(true, connectStatusText());
     viewportEl.classList.add("connect-mode");
+    renderer.clearMultiSelection();
+    hideBulkToolbar();
   },
   addTextbox: () => {
     const rect = viewportEl.getBoundingClientRect();
@@ -153,17 +157,116 @@ function zoomAtCenter(factor) {
   camera.zoomBy(factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
 }
 
-// 배경 드래그 = 캔버스 팬 / 배경 클릭 = 선택 해제 (카드/텍스트 박스 위에서는 동작하지 않도록 filter로 제외)
+// 배경 드래그 = 캔버스 팬(기본) / Shift+배경 드래그 = 마키(사각형) 다중 선택 / 배경 클릭 = 선택 해제
+// (카드/텍스트 박스 위에서는 동작하지 않도록 filter로 제외)
+let marqueeState = null; // { startX, startY }(화면 좌표) — 마키를 그리는 중일 때만 값이 있음
+
+function updateMarqueeBox(curX, curY) {
+  const x = Math.min(marqueeState.startX, curX);
+  const y = Math.min(marqueeState.startY, curY);
+  marqueeBoxEl.style.left = `${x}px`;
+  marqueeBoxEl.style.top = `${y}px`;
+  marqueeBoxEl.style.width = `${Math.abs(curX - marqueeState.startX)}px`;
+  marqueeBoxEl.style.height = `${Math.abs(curY - marqueeState.startY)}px`;
+}
+
+function rectsIntersect(a, b) {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+/** 마키 사각형과 겹치는 인물/텍스트박스를 모아 다중 선택으로 확정한다. 딱 하나만 걸리면 그냥
+ * 평범한 단일 선택(사이드바 열기)으로 처리해서, "카드 하나만 작게 둘러싼" 경우를 클릭과
+ * 비슷하게 느끼게 한다. */
+function finalizeMarquee() {
+  const rect = marqueeBoxEl.getBoundingClientRect();
+  marqueeBoxEl.classList.remove("visible");
+  marqueeState = null;
+
+  const peopleIds = [];
+  for (const [id, el] of renderer.cardEls) {
+    if (rectsIntersect(rect, el.getBoundingClientRect())) peopleIds.push(id);
+  }
+  const textBoxIds = [];
+  for (const [id, el] of renderer.textBoxEls) {
+    if (rectsIntersect(rect, el.getBoundingClientRect())) textBoxIds.push(id);
+  }
+
+  const total = peopleIds.length + textBoxIds.length;
+  if (total >= 2) {
+    renderer.setSelected(null);
+    renderer.setSelectedTextBox(null);
+    renderer.setSelectedLine(null);
+    inspector.close();
+    renderer.setMultiSelection({ people: peopleIds, textBoxes: textBoxIds });
+    updateBulkToolbar();
+  } else if (total === 1) {
+    renderer.clearMultiSelection();
+    hideBulkToolbar();
+    if (peopleIds.length) handleCardClick(peopleIds[0]);
+    else handleTextBoxClick(textBoxIds[0]);
+  } else {
+    renderer.clearMultiSelection();
+    hideBulkToolbar();
+  }
+}
+
+function updateBulkToolbar() {
+  const count = renderer.getMultiSelectionCount();
+  if (count < 2) {
+    hideBulkToolbar();
+    return;
+  }
+  bulkToolbarEl.classList.add("visible");
+  bulkToolbarEl.querySelector(".bulk-toolbar-count").textContent = `${count}개 선택됨`;
+  const allLocked = renderer.isSelectionFullyLocked();
+  const lockBtn = bulkToolbarEl.querySelector('[data-action="bulk-lock"]');
+  lockBtn.textContent = allLocked ? "🔓" : "🔒";
+  lockBtn.title = allLocked ? "선택 잠금 풀기" : "선택 잠금";
+  lockBtn.classList.toggle("active", allLocked);
+}
+
+function hideBulkToolbar() {
+  bulkToolbarEl.classList.remove("visible");
+}
+
+bulkToolbarEl.querySelector('[data-action="bulk-lock"]').addEventListener("click", () => {
+  const allLocked = renderer.isSelectionFullyLocked();
+  renderer.setLockedForSelection(!allLocked);
+  updateBulkToolbar();
+});
+
 const backgroundDrag = new DragController(viewportEl, {
   filter: (e) => !e.target.closest(".person-card") && !e.target.closest(".text-box"),
-  onDragStart: () => camera.setTransforming(true),
-  onDragMove: (dx, dy) => camera.pan(dx, dy),
-  onDragEnd: () => camera.setTransforming(false),
+  onDragStart: (e) => {
+    if (e.shiftKey) {
+      marqueeState = { startX: e.clientX, startY: e.clientY };
+      marqueeBoxEl.classList.add("visible");
+      updateMarqueeBox(e.clientX, e.clientY);
+    } else {
+      camera.setTransforming(true);
+    }
+  },
+  onDragMove: (dx, dy, e) => {
+    if (marqueeState) {
+      updateMarqueeBox(e.clientX, e.clientY);
+    } else {
+      camera.pan(dx, dy);
+    }
+  },
+  onDragEnd: () => {
+    if (marqueeState) {
+      finalizeMarquee();
+    } else {
+      camera.setTransforming(false);
+    }
+  },
   onClick: () => {
     if (connectMode) return;
     renderer.setSelected(null);
     renderer.setSelectedTextBox(null);
     renderer.setSelectedLine(null);
+    renderer.clearMultiSelection();
+    hideBulkToolbar();
     inspector.close();
   },
 });
@@ -195,6 +298,8 @@ function handleCardClick(id) {
   renderer.setSelected(id);
   renderer.setSelectedTextBox(null);
   renderer.setSelectedLine(null);
+  renderer.clearMultiSelection();
+  hideBulkToolbar();
   const person = tree.people.get(id);
   if (person) inspector.open(person);
 }
@@ -207,6 +312,8 @@ function handleTextBoxClick(id) {
   renderer.setSelected(null);
   renderer.setSelectedTextBox(id);
   renderer.setSelectedLine(null);
+  renderer.clearMultiSelection();
+  hideBulkToolbar();
   inspector.openTextBox(box);
 }
 
@@ -243,6 +350,8 @@ function handleLineClick(relId) {
   renderer.setSelected(null);
   renderer.setSelectedTextBox(null);
   renderer.setSelectedLine(relId);
+  renderer.clearMultiSelection();
+  hideBulkToolbar();
   inspector.openRelationship(rel);
 }
 
@@ -287,6 +396,8 @@ async function doImport(file) {
     renderer.photoUrls.clear();
     await store.importJSON(data, tree);
     camera.fitToContent(tree.getBounds());
+    hideBulkToolbar(); // 옛 트리에서 마키로 골라뒀던 대상은 이제 없으니 벌크 툴바도 같이 접는다
+    inspector.close();
   } catch (err) {
     console.error(err);
     alert("파일을 읽는 중 문제가 발생했습니다. 올바른 가계도 JSON 파일인지 확인해주세요.");
@@ -324,6 +435,8 @@ document.addEventListener("keydown", (e) => {
   renderer.setSelected(null);
   renderer.setSelectedTextBox(null);
   renderer.setSelectedLine(null);
+  renderer.clearMultiSelection();
+  hideBulkToolbar();
 });
 
 async function init() {

@@ -26,6 +26,10 @@ export class TreeRenderer {
     this.textBoxEls = new Map();
     this.textBoxDrags = new Map(); // textBoxId -> { moveDrag, resizeDrag } (둘 다 destroy() 필요)
 
+    // 마키(배경 Shift+드래그)로 한 번에 여러 개를 고른 상태 — 사이드바를 여는 단일 선택과는 별개다.
+    this.multiSelected = { people: new Set(), textBoxes: new Set() };
+    this._groupDragState = null; // 여럿을 한꺼번에 옮기는 중일 때만 값이 있음(begin~/update~/commit~GroupDrag)
+
     this._editingRelId = null; // 지금 텍스트를 편집 중인 관계선 id(한 번에 하나만)
 
     tree.onChange((type, payload) => this._handle(type, payload));
@@ -138,6 +142,12 @@ export class TreeRenderer {
     this._snapGuideH = null;
     this._snapGuideV = null;
     this._extraGuideEls = null;
+    // 전체 다시 그리기 후에는 옛 id를 들고 있던 마키 다중 선택도 더 이상 유효하지 않다(가져오기/
+    // 실행취소로 아예 다른 트리가 들어올 수도 있음) — 내부 상태는 여기서 정리하고, main.js가 화면의
+    // 벌크 툴바(#bulk-toolbar) 자체를 숨기는 건 각 호출부(doImport 등)에서 따로 처리한다.
+    this.multiSelected.people.clear();
+    this.multiSelected.textBoxes.clear();
+    this._groupDragState = null;
     for (const person of this.tree.people.values()) await this._addCard(person);
     for (const rel of this.tree.relationships.values()) this._addLine(rel);
     // 텍스트 박스는 사람 카드 위에 겹쳐 놓고 쓰는 경우가 많아, 항상 그 위(DOM 뒤쪽 = 위 레이어)에 오게 마지막에 그린다.
@@ -162,6 +172,118 @@ export class TreeRenderer {
   /** 사람 카드의 setSelected와 같은 역할 — 관계선 쪽 선택 강조(사이드바가 열려 있는 대상). */
   setSelectedLine(id) {
     for (const [rid, el] of this.lineEls) el.classList.toggle("selected", rid === id);
+  }
+
+  /** 배경을 Shift+드래그해서 만든 마키 사각형 안에 들어온 인물/텍스트박스를 한꺼번에 선택 상태로
+   * 만든다 — 사이드바(단일 선택)와는 별개라, 이게 켜져 있으면 사이드바는 닫혀 있고 대신 상단
+   * 벌크 툴바가 뜬다(main.js가 관리). */
+  setMultiSelection({ people = [], textBoxes = [] } = {}) {
+    this.multiSelected.people = new Set(people);
+    this.multiSelected.textBoxes = new Set(textBoxes);
+    for (const [pid, el] of this.cardEls) el.classList.toggle("selected", this.multiSelected.people.has(pid));
+    for (const [bid, el] of this.textBoxEls) el.classList.toggle("selected", this.multiSelected.textBoxes.has(bid));
+  }
+
+  clearMultiSelection() {
+    if (!this.multiSelected.people.size && !this.multiSelected.textBoxes.size) return;
+    for (const pid of this.multiSelected.people) this.cardEls.get(pid)?.classList.remove("selected");
+    for (const bid of this.multiSelected.textBoxes) this.textBoxEls.get(bid)?.classList.remove("selected");
+    this.multiSelected.people.clear();
+    this.multiSelected.textBoxes.clear();
+  }
+
+  getMultiSelectionCount() {
+    return this.multiSelected.people.size + this.multiSelected.textBoxes.size;
+  }
+
+  /** 지금 마키로 골라둔 대상들(잠긴 것도 포함) 전체를 한 번에 잠그거나 푼다. */
+  setLockedForSelection(locked) {
+    for (const id of this.multiSelected.people) this.tree.updatePerson(id, { locked });
+    for (const id of this.multiSelected.textBoxes) this.tree.updateTextBox(id, { locked });
+  }
+
+  /** 지금 마키로 골라둔 대상 중 잠기지 않은 것이 하나라도 있으면 false(= "아직 안 잠김" 상태로
+   * 취급) — 벌크 잠금 버튼이 "전부 잠그기"와 "전부 풀기" 중 뭘 다음에 할지 정할 때 쓴다. */
+  isSelectionFullyLocked() {
+    for (const id of this.multiSelected.people) {
+      if (!this.tree.people.get(id)?.locked) return false;
+    }
+    for (const id of this.multiSelected.textBoxes) {
+      if (!this.tree.textBoxes.get(id)?.locked) return false;
+    }
+    return this.getMultiSelectionCount() > 0;
+  }
+
+  /** 마키 선택 인원이 2명 이상일 때, 그중 하나를 드래그하면 전체가 같은 만큼 같이 움직인다 —
+   * 잠긴 대상은 처음 좌표를 기록 대상에서 빼서 그것만 안 움직이게 한다(선택 자체는 유지). */
+  _beginGroupDrag() {
+    const positions = new Map(); // id -> { x, y, type }
+    for (const id of this.multiSelected.people) {
+      const p = this.tree.people.get(id);
+      if (p && !p.locked) positions.set(id, { x: p.x, y: p.y, type: "person" });
+    }
+    for (const id of this.multiSelected.textBoxes) {
+      const b = this.tree.textBoxes.get(id);
+      if (b && !b.locked) positions.set(id, { x: b.x, y: b.y, type: "textbox" });
+    }
+    this._groupDragState = { positions, dx: 0, dy: 0 };
+  }
+
+  _updateGroupDrag(dxWorld, dyWorld) {
+    const g = this._groupDragState;
+    if (!g) return;
+    g.dx += dxWorld;
+    g.dy += dyWorld;
+    for (const [id, start] of g.positions) {
+      const nx = start.x + g.dx;
+      const ny = start.y + g.dy;
+      if (start.type === "person") {
+        const p = this.tree.people.get(id);
+        if (!p) continue;
+        p.x = nx;
+        p.y = ny;
+        const el = this.cardEls.get(id);
+        if (el) this._scheduleVisualUpdate(p, el);
+      } else {
+        const b = this.tree.textBoxes.get(id);
+        if (!b) continue;
+        b.x = nx;
+        b.y = ny;
+        const el = this.textBoxEls.get(id);
+        if (el) {
+          el.style.left = `${nx}px`;
+          el.style.top = `${ny}px`;
+        }
+      }
+    }
+  }
+
+  /** droppedOnTrash면 그룹 전체(잠기지 않아 실제로 움직인 대상들)를 확인 후 한 번에 지운다 —
+   * 아니면 그동안 옮긴 좌표를 전부 커밋한다. */
+  _commitGroupDrag(droppedOnTrash) {
+    const g = this._groupDragState;
+    if (!g) return;
+    this._groupDragState = null;
+    if (droppedOnTrash) {
+      if (!confirm(`선택한 ${g.positions.size}개를 삭제할까요? 인물이면 연결된 관계선도 함께 삭제됩니다.`)) {
+        return;
+      }
+      for (const [id, start] of g.positions) {
+        if (start.type === "person") this.tree.removePerson(id);
+        else this.tree.removeTextBox(id);
+      }
+      this.clearMultiSelection();
+      return;
+    }
+    for (const [id, start] of g.positions) {
+      if (start.type === "person") {
+        const p = this.tree.people.get(id);
+        if (p) this.tree.updatePerson(id, { x: p.x, y: p.y });
+      } else {
+        const b = this.tree.textBoxes.get(id);
+        if (b) this.tree.updateTextBox(id, { x: b.x, y: b.y });
+      }
+    }
   }
 
   /** photoId(업로드된 Blob)를 우선으로, 없으면 photoUrl(외부 링크)로 폴백한다. */
@@ -197,29 +319,42 @@ export class TreeRenderer {
       getScale: () => this.camera.scale,
       onDragStart: () => {
         if (person.locked) return; // 잠긴 인물은 드래그로 못 옮긴다 — 휴지통 힌트도 안 보여준다.
-        rawX = person.x;
-        rawY = person.y;
+        // 마키로 2개 이상 골라둔 상태에서 그중 하나를 끌면, 그 묶음 전체가 같이 움직인다.
+        if (this.multiSelected.people.has(person.id) && this.getMultiSelectionCount() >= 2) {
+          this._beginGroupDrag();
+        } else {
+          rawX = person.x;
+          rawY = person.y;
+        }
         this._showTrash();
       },
       onMove: (dx, dy, e) => {
         if (person.locked) return;
-        rawX += dx;
-        rawY += dy;
-        const snapped = this._computeSnap(rawX, rawY, person);
-        person.x = snapped.x;
-        person.y = snapped.y;
-        this._setGuide("h", snapped.guideY);
-        this._setGuide("v", snapped.guideX);
-        this._setExtraGuides(snapped.extraGuides);
-        this._scheduleVisualUpdate(person, el);
+        if (this._groupDragState) {
+          this._updateGroupDrag(dx, dy);
+        } else {
+          rawX += dx;
+          rawY += dy;
+          const snapped = this._computeSnap(rawX, rawY, person);
+          person.x = snapped.x;
+          person.y = snapped.y;
+          this._setGuide("h", snapped.guideY);
+          this._setGuide("v", snapped.guideX);
+          this._setExtraGuides(snapped.extraGuides);
+          this._scheduleVisualUpdate(person, el);
+        }
         this._setTrashArmed(e && this._isOverTrash(e.clientX, e.clientY));
       },
       onMoveEnd: (e) => {
         if (person.locked) return;
         this._hideSnapGuides();
-        this._flushVisualUpdate(person, el);
         const droppedOnTrash = e && this._isOverTrash(e.clientX, e.clientY);
         this._hideTrash();
+        if (this._groupDragState) {
+          this._commitGroupDrag(droppedOnTrash);
+          return;
+        }
+        this._flushVisualUpdate(person, el);
         if (droppedOnTrash) {
           if (confirm("이 인물을 삭제할까요? 연결된 관계선도 함께 삭제됩니다.")) {
             this.tree.removePerson(person.id);
@@ -246,22 +381,37 @@ export class TreeRenderer {
     const moveDrag = attachTextBoxDrag(el, {
       getScale: () => this.camera.scale,
       onDragStart: () => {
-        rawX = box.x;
-        rawY = box.y;
+        if (box.locked) return; // 잠긴 텍스트 박스는 드래그로 못 옮긴다.
+        if (this.multiSelected.textBoxes.has(box.id) && this.getMultiSelectionCount() >= 2) {
+          this._beginGroupDrag();
+        } else {
+          rawX = box.x;
+          rawY = box.y;
+        }
         this._showTrash();
       },
       onMove: (dx, dy, e) => {
-        rawX += dx;
-        rawY += dy;
-        box.x = rawX;
-        box.y = rawY;
-        el.style.left = `${box.x}px`;
-        el.style.top = `${box.y}px`;
+        if (box.locked) return;
+        if (this._groupDragState) {
+          this._updateGroupDrag(dx, dy);
+        } else {
+          rawX += dx;
+          rawY += dy;
+          box.x = rawX;
+          box.y = rawY;
+          el.style.left = `${box.x}px`;
+          el.style.top = `${box.y}px`;
+        }
         this._setTrashArmed(e && this._isOverTrash(e.clientX, e.clientY));
       },
       onMoveEnd: (e) => {
+        if (box.locked) return;
         const droppedOnTrash = e && this._isOverTrash(e.clientX, e.clientY);
         this._hideTrash();
+        if (this._groupDragState) {
+          this._commitGroupDrag(droppedOnTrash);
+          return;
+        }
         if (droppedOnTrash) {
           if (confirm("이 텍스트 박스를 삭제할까요?")) {
             this.tree.removeTextBox(box.id);

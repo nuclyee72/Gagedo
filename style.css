@@ -248,6 +248,73 @@ html, body {
   transform: translate(-50%, 0) scale(1.15);
 }
 
+/* 배경을 Shift+드래그하면 나타나는 사각형 선택 영역(마키/러버밴드) — JS가 화면 좌표 기준으로
+   위치/크기(left/top/width/height)를 실시간으로 계산해 인라인 스타일로 넣는다. */
+#marquee-box {
+  position: fixed;
+  display: none;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 25;
+}
+
+#marquee-box.visible { display: block; }
+
+/* 마키로 인물/텍스트박스를 한꺼번에 여러 개 골랐을 때 뜨는 작은 툴바 — 몇 개 골랐는지 보여주고
+   한 번에 잠그거나 풀 수 있게 한다. 툴바 바로 아래, 화면 위쪽 중앙에 떠 있다. */
+.bulk-toolbar {
+  position: fixed;
+  top: calc(var(--toolbar-h, 48px) + 12px);
+  left: 50%;
+  transform: translate(-50%, -8px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 10px 8px 16px;
+  box-shadow: 0 4px 16px var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 32;
+}
+
+.bulk-toolbar.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+.bulk-toolbar-count {
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.bulk-toolbar button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bulk-toolbar button:hover { background: var(--accent-soft); }
+
+.bulk-toolbar button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 /* ---------- Person card ---------- */
 
 .person-card {

@@ -5,6 +5,11 @@ import { ROW_SPACING, COL_SPACING } from "../core/AutoLayout.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+// 드래그 중인 카드가 다른 카드/템플릿 칸에 "달라붙는" 스냅(클리핑) 판정 거리 — 화면 픽셀 기준
+// (camera.scale로 나눠 월드 좌표로 환산해서 씀). 예전엔 8이라 너무 빡빡해서(살짝만 어긋나도 안
+// 붙음) 잘 안 달라붙는다는 피드백이 있어 키웠다.
+const SNAP_THRESHOLD_PX = 14;
+
 /** TreeModel의 변화를 구독해 사람 카드(DOM)와 관계선(SVG)을 동기화한다. */
 export class TreeRenderer {
   constructor({ tree, worldEl, linesEl, camera, store, onCardClick, onLineClick, onTextBoxClick, trashEl }) {
@@ -256,7 +261,9 @@ export class TreeRenderer {
     for (const id of positions.keys()) {
       for (const relId of this._affectedLineIds(id)) affectedLineIds.add(relId);
     }
-    this._groupDragState = { positions, dx: 0, dy: 0, anchorId, anchorType, lockedEls, affectedLineIds };
+    // 그룹 멤버 전원의 id — anchor 스냅 계산에서 "나와 같이 끌려가는 멤버"를 후보에서 빼는 데 쓴다.
+    const memberIds = new Set(positions.keys());
+    this._groupDragState = { positions, dx: 0, dy: 0, anchorId, anchorType, lockedEls, affectedLineIds, memberIds };
   }
 
   _updateGroupDrag(dxWorld, dyWorld) {
@@ -275,7 +282,7 @@ export class TreeRenderer {
       if (anchorPerson) {
         const rawX = anchorStart.x + g.dx;
         const rawY = anchorStart.y + g.dy;
-        snapped = this._computeSnap(rawX, rawY, anchorPerson);
+        snapped = this._computeSnap(rawX, rawY, anchorPerson, g.memberIds);
         snapDx = snapped.x - rawX;
         snapDy = snapped.y - rawY;
       }
@@ -597,9 +604,16 @@ export class TreeRenderer {
    * 직후 같은 가로열 형제들처럼) 아무리 옮겨도 계속 그 자리로 도로 끌려가 버리는 버그가 있었다.
    * rawX/rawY는 호출한 쪽(카드별 드래그 클로저)이 실제 커서 이동량만으로 계속 누적해야 한다.
    */
-  _computeSnap(rawX, rawY, person) {
+  /**
+   * excludeIds: person.id 자신 말고 "추가로" 후보에서 빼야 할 id들(그룹 드래그 중인 다른 멤버들).
+   * 그룹 전체가 같은 델타로 같이 움직이는 동안엔 서로의 상대 거리가 절대 안 바뀌므로, 뺴놓지
+   * 않으면 "옆에 같이 끌려가는 내 그룹 멤버"가 항상 후보에 걸려서(자동 정렬 직후엔 형제끼리
+   * 정확히 표준 간격만큼 떨어져 있는 경우가 흔하다) 커서를 어디로 옮기든 그 멤버 쪽으로만
+   * 계속 "스냅된 것처럼" 보이고 정작 원하는 외부 기준(다른 가족/템플릿 칸)엔 안 붙는 문제가 있다.
+   */
+  _computeSnap(rawX, rawY, person, excludeIds = null) {
     const excludeId = person.id;
-    const threshold = 8 / this.camera.scale;
+    const threshold = SNAP_THRESHOLD_PX / this.camera.scale;
     let bestY = null;
     let bestYDist = threshold;
     let bestYAnchor = null; // 이 스냅이 "누구/어디" 기준인지 — 있으면 점선으로 보여준다.
@@ -607,7 +621,7 @@ export class TreeRenderer {
     let bestXDist = threshold;
     let bestXAnchor = null;
     for (const other of this.tree.people.values()) {
-      if (other.id === excludeId) continue;
+      if (other.id === excludeId || excludeIds?.has(other.id)) continue;
       // 같은 y/x로 나란히 맞추는 스냅은 이미 무한 점선 가이드(_setGuide)로 표시되므로 anchor를 따로 안 둔다.
       const dy = Math.abs(other.y - rawY);
       if (dy < bestYDist) {
@@ -624,7 +638,7 @@ export class TreeRenderer {
     }
 
     // "부모-자식(부모2)"의 자식이면, 부모 쌍을 기준으로 한 중심/n등분 후보도 함께 검사한다.
-    const family = this._familySnapCandidates(person);
+    const family = this._familySnapCandidates(person, excludeIds);
     if (family) {
       const anchor = { x: family.trunkX, y: family.parentY };
       for (const c of family.xCandidates) {
@@ -646,7 +660,7 @@ export class TreeRenderer {
     }
 
     // 템플릿 간격(표준 칸 간격) 스냅은 특정 관계와 상관없이 "모든 인물" 기준으로 검사한다.
-    const template = this._templateSnapCandidates(person);
+    const template = this._templateSnapCandidates(person, excludeIds);
     for (const c of template.xCandidates) {
       const dx = Math.abs(c.x - rawX);
       if (dx < bestXDist) {
@@ -701,7 +715,7 @@ export class TreeRenderer {
    * 세로(y)는 부모 세대보다 정확히 한 세대(ROW_SPACING) 아래인 지점.
    * (표준 칸 간격 스냅은 이제 _templateSnapCandidates가 모든 인물 기준으로 따로 처리한다.)
    */
-  _familySnapCandidates(person) {
+  _familySnapCandidates(person, excludeIds = null) {
     let rel = null;
     for (const r of this.tree.relationships.values()) {
       if (r.type === "parent-child" && r.toId === person.id) {
@@ -713,6 +727,10 @@ export class TreeRenderer {
       const parent1 = this.tree.people.get(rel.fromId);
       const parent2 = this._partnerFor(rel, parent1);
       if (!parent1 || !parent2) return null;
+      // 부모 중 한 명이라도 지금 같이 그룹으로 끌려가는 중이면(같은 델타로 같이 움직여 트렁크
+      // 자체가 매 프레임 같이 이동하므로) 기준으로 못 쓴다 — 그대로 쓰면 "내가 옮기는 그룹 안의
+      // 부모"에 늘 붙어있는 것처럼 보여서 실제로는 아무 데도 안 붙는 것과 다름없어진다.
+      if (excludeIds && (excludeIds.has(parent1.id) || excludeIds.has(parent2.id))) return null;
 
       const n = this._siblingGroup(rel).length; // 이 사람 자신도 포함된, 이 부모 쌍의 전체 자식 수
       const trunkX = (parent1.x + parent2.x) / 2;
@@ -744,6 +762,7 @@ export class TreeRenderer {
     if (!soloRel) return null;
     const parent = this.tree.people.get(soloRel.fromId);
     if (!parent) return null;
+    if (excludeIds && excludeIds.has(parent.id)) return null; // 위와 같은 이유(부모가 같이 끌려가는 중).
 
     const siblings = [];
     for (const r of this.tree.relationships.values()) {
@@ -766,11 +785,11 @@ export class TreeRenderer {
    * 오면 달라붙는다. 어느 사람 기준으로 붙었는지 점선으로 보여줄 수 있도록 anchor(그 사람의 좌표)
    * 도 함께 반환한다.
    */
-  _templateSnapCandidates(person) {
+  _templateSnapCandidates(person, excludeIds = null) {
     const xCandidates = [];
     const yCandidates = [];
     for (const other of this.tree.people.values()) {
-      if (other.id === person.id) continue;
+      if (other.id === person.id || excludeIds?.has(other.id)) continue;
       const anchor = { x: other.x, y: other.y };
       xCandidates.push({ x: other.x + COL_SPACING, anchor });
       xCandidates.push({ x: other.x - COL_SPACING, anchor });

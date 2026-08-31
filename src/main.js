@@ -615,10 +615,23 @@ document.addEventListener("keydown", (e) => {
     // 텍스트박스 복사로 취급한다.
     if (window.getSelection()?.toString()) return;
     copySelectionToClipboard();
-  } else if ((e.ctrlKey || e.metaKey) && key === "v") {
-    e.preventDefault();
-    pasteClipboard();
   }
+  // 붙여넣기(Ctrl+V)는 여기서 안 가로챈다 — 아래 네이티브 "paste" 이벤트 리스너를 쓴다
+  // (InspectorPanel의 "클립보드 이미지를 사진으로 붙여넣기" 기능과 같은 이벤트를 보고 서로
+  // 안 겹치게 양보하기 위해. 자세한 이유는 그 리스너의 주석 참고).
+});
+
+// 인물/텍스트 박스 붙여넣기(Ctrl+V)는 keydown이 아니라 네이티브 "paste" 이벤트로 처리한다 — 그래야
+// e.clipboardData로 "지금 진짜 시스템 클립보드에 뭐가 들어있는지"를 직접 볼 수 있어서, 인물 사진으로
+// 이미지를 붙여넣으려는 것(InspectorPanel._onPaste, 이미지가 있을 때만 가로챔)과 마주쳐도 서로
+// 헷갈리지 않는다 — keydown 시점엔 clipboardData에 접근할 수 없어 "이번 Ctrl+V가 이미지 붙여넣기
+// 인지 아닌지"를 미리 알 도리가 없었다(먼저 가로채 버리면 이미지 붙여넣기 자체가 막혀버림).
+document.addEventListener("paste", (e) => {
+  const isTyping = document.activeElement?.matches?.("input, textarea, [contenteditable='true']");
+  if (isTyping) return; // 이름/메모/태그 등 텍스트 입력 중엔 브라우저 기본 붙여넣기 그대로.
+  const items = [...(e.clipboardData?.items || [])];
+  if (items.some((it) => it.kind === "file" && it.type.startsWith("image/"))) return; // 사진 붙여넣기에 양보.
+  pasteClipboard();
 });
 
 async function init() {

@@ -1173,11 +1173,32 @@ html, body {
     margin-left: 0;
   }
 
-  /* 사이드바는 화면 대부분을 차지하게 — 좁은 화면에서 고정폭 300px는 너무 좁고 답답하다. */
+  /* 오른쪽에서 슬라이드되는 세로 패널 대신, 화면 하단에서 올라오는 시트로 바꾼다
+     (Adv_Sudoku_Maker의 .floating-panel 모바일 처리와 같은 결) — 좁은 세로 화면에서
+     오른쪽 92vw짜리 패널이 캔버스 대부분을 가로로 밀어붙이듯 가리던 것보다, 위쪽에 약간의
+     캔버스만 남기고 아래에서 올라오는 시트가 훨씬 자연스럽다. #inspector는 원래도 인라인
+     left/top을 전혀 안 쓰는 순수 CSS 위치 패널이라(드래그 가능한 떠있는 창이 아님) 이
+     미디어 쿼리만으로 완전히 전환되고, 그 외 트랜지션(transform 0.2s)·스크롤 처리
+     (overflow-y:auto, scrollbar-gutter:stable)는 데스크톱 규칙 그대로 물려받는다. */
   #inspector {
-    width: 92vw;
-    padding-right: calc(16px + env(safe-area-inset-right, 0px));
-    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: 100%;
+    max-height: 80vh;
+    max-height: 80dvh; /* dvh 미지원 브라우저는 위 vh 값을 그대로 씀 */
+    border-left: none;
+    border-top: 1px solid var(--border);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -4px 16px var(--panel-shadow);
+    padding: 16px calc(16px + env(safe-area-inset-right, 0px))
+             calc(16px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
+    transform: translateY(100%);
+  }
+
+  #inspector.open {
+    transform: translateY(0);
   }
 }
 

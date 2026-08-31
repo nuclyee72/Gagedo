@@ -10,13 +10,15 @@ export const TYPE_LABEL = {
   custom: "",
 };
 
+// 유형별 기본 색(rel.color가 없을 때만 씀). 선 종류(dash)는 더 이상 유형별 기본값이 없다 —
+// rel.lineStyle이 없으면 항상 "실선"이 기본이다(LINE_STYLE_PRESETS의 solid).
 const TYPE_STYLE = {
-  // 배우자 선도 부모-자식과 같은 선(색/굵기/실선)을 쓴다 — 가족선이 하나로 이어져 보이도록.
-  "parent-child-solo": { stroke: "#5b6b8c", dash: "" },
-  "parent-child": { stroke: "#5b6b8c", dash: "" },
-  spouse: { stroke: "#5b6b8c", dash: "" },
-  sibling: { stroke: "#4f9d6d", dash: "2 5" },
-  custom: { stroke: "#8a8f98", dash: "4 3" },
+  // 배우자 선도 부모-자식과 같은 색을 쓴다 — 가족선이 하나로 이어져 보이도록.
+  "parent-child-solo": { stroke: "#5b6b8c" },
+  "parent-child": { stroke: "#5b6b8c" },
+  spouse: { stroke: "#5b6b8c" },
+  sibling: { stroke: "#4f9d6d" },
+  custom: { stroke: "#8a8f98" },
 };
 
 /** 사이드바에 보여줄 유형 이름(읽기 전용 표시용 — 유형 자체는 바꿀 수 없다). */
@@ -28,7 +30,7 @@ export const TYPE_DISPLAY_NAME = {
   custom: "기타",
 };
 
-/** 선 종류 프리셋 — rel.lineStyle에 이 중 하나의 key를 저장한다(없으면 유형 기본 dash를 그대로 씀). */
+/** 선 종류 프리셋 — rel.lineStyle에 이 중 하나의 key를 저장한다(없으면 "solid"가 기본). */
 export const LINE_STYLE_PRESETS = {
   solid: { label: "실선", dash: "" },
   dashed: { label: "파선", dash: "9 5" },
@@ -76,10 +78,11 @@ export function createLineElement(rel) {
 export function applyLineStyle(g, rel) {
   const style = TYPE_STYLE[rel.type] || TYPE_STYLE.custom;
   const visible = g.querySelector(".rel-line-visible");
-  // rel.color/lineStyle이 있으면(사이드바에서 사용자가 직접 고른 값) 유형 기본값 대신 그걸 쓴다.
+  // rel.color가 있으면(사이드바에서 사용자가 직접 고른 값) 유형 기본색 대신 그걸 쓴다.
   visible.setAttribute("stroke", rel.color || style.stroke);
   visible.setAttribute("stroke-width", "2.5");
-  const dasharray = rel.lineStyle ? LINE_STYLE_PRESETS[rel.lineStyle]?.dash : style.dash;
+  // 선 종류는 이제 유형별 기본값이 없다 — rel.lineStyle이 없으면 항상 "실선"이 기본이다.
+  const dasharray = LINE_STYLE_PRESETS[rel.lineStyle || "solid"].dash;
   if (dasharray) visible.setAttribute("stroke-dasharray", dasharray);
   else visible.removeAttribute("stroke-dasharray");
 

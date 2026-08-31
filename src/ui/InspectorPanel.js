@@ -420,8 +420,7 @@ export class InspectorPanel {
     this.relationship = rel;
     this.el.querySelector(".rel-type-display").textContent = TYPE_DISPLAY_NAME[rel.type] || rel.type;
     this.el.querySelector(".rel-label").value = rel.label || "";
-    this.el.querySelector(".rel-linestyle").value = rel.lineStyle || "";
-    this._syncRelationshipColorAndStyle(rel);
+    this._syncRelationshipColorAndStyle(rel); // .rel-linestyle 값도 여기서 같이 채운다(중복 방지)
     this.el.classList.add("open");
   }
 
@@ -433,7 +432,7 @@ export class InspectorPanel {
       sw.classList.toggle("active", !!rel.color && sw.dataset.color === rel.color);
     }
     const linestyleEl = this.el.querySelector(".rel-linestyle");
-    if (linestyleEl && document.activeElement !== linestyleEl) linestyleEl.value = rel.lineStyle || "";
+    if (linestyleEl && document.activeElement !== linestyleEl) linestyleEl.value = rel.lineStyle || "solid";
   }
 
   _buildRelationshipSkeleton() {
@@ -457,7 +456,6 @@ export class InspectorPanel {
       </div>
       <label>선 종류
         <select class="rel-linestyle">
-          <option value="">기본값</option>
           ${Object.entries(LINE_STYLE_PRESETS).map(([key, { label }]) => `<option value="${key}">${label}</option>`).join("")}
         </select>
       </label>
@@ -490,7 +488,8 @@ export class InspectorPanel {
 
     this.el.querySelector(".rel-linestyle").addEventListener("change", (e) => {
       if (!this.relationship) return;
-      this.tree.updateRelationship(this.relationship.id, { lineStyle: e.target.value || null });
+      // "기본값"(비어있는 선택지) 자체가 없어졌으므로 여기 값은 항상 solid/dashed/dotted 중 하나다.
+      this.tree.updateRelationship(this.relationship.id, { lineStyle: e.target.value });
     });
 
     this.el.querySelector(".rel-delete").addEventListener("click", () => {

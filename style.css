@@ -263,9 +263,16 @@ html, body {
   border-radius: 50%;
   overflow: hidden;
   background: var(--surface);
-  border: 3px solid var(--panel-bg);
+  /* border 대신 outline을 쓴다 — outline은 이 엘리먼트의 overflow:hidden에 안 잘리면서(사진을
+     원으로 자르는 용도는 그대로 유지), outline-offset을 굵기의 절반만큼 음수로 줘서 원래 경계선을
+     중심으로 안쪽 절반·바깥쪽 절반이 대칭으로 걸치게 한다 — 두께가 늘어도 border-box처럼 사진
+     쪽으로만 파고들지 않고, 원 바깥쪽으로도 같이 커진다("안팎 모두 커짐"). 정확한 -offset 값은
+     굵기가 바뀔 때마다 PersonCard.js가 함께 다시 계산해서 넣는다.
+     (outline은 border-radius를 따라 둥글게 그려진다 — 최신 브라우저 기준.) */
+  outline: 3px solid var(--panel-bg);
+  outline-offset: -1.5px;
   box-shadow: 0 2px 10px var(--shadow);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: outline-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 /* border-color는 여기서 건드리지 않는다 — 사용자가 사진 테두리 색을 직접 골랐다면(PersonCard.js가
@@ -509,7 +516,19 @@ html, body {
   transition: transform 0.2s ease;
   z-index: 30;
   overflow-y: auto;
+  /* 내용(인물/텍스트 박스/관계선 중 어느 모드든)이 패널 높이보다 길면 스크롤되는데, OS 기본
+     스크롤바는 테마와 안 어울리고 눈에 잘 안 띄어서 "스크롤이 되는지" 알아채기 어려울 수 있다 —
+     세 모드가 전부 이 하나의 #inspector 엘리먼트를 공유하므로, 여기 한 번만 스타일을 둬도
+     모든 사이드바(인물/텍스트 박스/관계선)에 똑같이 적용된다.
+     scrollbar-width/color는 Firefox, ::-webkit-scrollbar*는 Chrome/Safari/Edge용. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
+
+#inspector::-webkit-scrollbar { width: 8px; }
+#inspector::-webkit-scrollbar-track { background: transparent; }
+#inspector::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+#inspector::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
 #inspector.open { transform: translateX(0); }
 

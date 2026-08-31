@@ -291,8 +291,17 @@ export class TreeRenderer {
       onResize: (dxWorld, dyWorld) => {
         rawW += dxWorld;
         rawH += dyWorld;
-        const w = Math.max(MIN_W, Math.round(rawW));
-        const h = Math.max(MIN_H, Math.round(rawH));
+        // 상자 폭/높이가 지금 글자 크기(box.fontSize)의 배수에 거의 맞아떨어지면 그 값에 달라붙는다
+        // ("자동 클리핑") — 예: 글자 크기가 20이면 40/60/80...에 가까워질 때 정확히 그 값이 된다.
+        // 인물 카드 스냅과 같은 방식으로, 화면 기준 오차(줌 배율 반영)를 threshold로 둔다.
+        const threshold = 6 / this.camera.scale;
+        const snapToFontUnit = (raw) => {
+          const unit = box.fontSize || 16;
+          const nearest = Math.round(raw / unit) * unit;
+          return Math.abs(nearest - raw) <= threshold ? nearest : raw;
+        };
+        const w = Math.max(MIN_W, Math.round(snapToFontUnit(rawW)));
+        const h = Math.max(MIN_H, Math.round(snapToFontUnit(rawH)));
         const content = el.querySelector(".text-box-content");
         content.style.width = `${w}px`;
         content.style.height = `${h}px`;
@@ -414,10 +423,19 @@ export class TreeRenderer {
     const x = bestX !== null ? bestX : rawX;
     const y = bestY !== null ? bestY : rawY;
 
+    // 기준점(anchor)에서 스냅된 위치(x,y)까지 한 번에 대각선으로 잇지 않는다 — anchor와 target은
+    // 보통 가로/세로 둘 다 다른 지점이라(예: 부모 트렁크는 자식 세대보다 한 줄 위, 템플릿 스냅의
+    // 기준 인물은 다른 칸에 있음), 직선으로 이으면 아무 의미 없는 대각선이 그려져 헷갈린다. 대신
+    // "가로로 이만큼, 세로로 이만큼"을 보여주는 직각(ㄱ자) 꺾은선 두 토막으로 나눠 그린다 —
+    // x 기준은 (기준 y에서 가로로 이동) 다음 (그 x에서 세로로 target y까지), y 기준은 그 반대 순서.
     const extraGuides = [];
-    if (bestXAnchor) extraGuides.push({ x1: bestXAnchor.x, y1: bestXAnchor.y, x2: x, y2: y });
+    if (bestXAnchor) {
+      extraGuides.push({ x1: bestXAnchor.x, y1: bestXAnchor.y, x2: x, y2: bestXAnchor.y });
+      extraGuides.push({ x1: x, y1: bestXAnchor.y, x2: x, y2: y });
+    }
     if (bestYAnchor && (!bestXAnchor || bestYAnchor.x !== bestXAnchor.x || bestYAnchor.y !== bestXAnchor.y)) {
-      extraGuides.push({ x1: bestYAnchor.x, y1: bestYAnchor.y, x2: x, y2: y });
+      extraGuides.push({ x1: bestYAnchor.x, y1: bestYAnchor.y, x2: bestYAnchor.x, y2: y });
+      extraGuides.push({ x1: bestYAnchor.x, y1: y, x2: x, y2: y });
     }
 
     return { x, y, guideX: bestX, guideY: bestY, extraGuides };

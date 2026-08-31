@@ -706,40 +706,46 @@ html, body {
 
 .modal-box h3 { margin: 0 0 8px; font-size: 15px; }
 
-.modal-hint {
-  margin: 0 0 14px;
-  font-size: 11px;
-  color: var(--muted);
-  line-height: 1.4;
+/* ---------- 관계 유형 드롭다운("&관계" 버튼 바로 아래) ---------- */
+
+.connect-dropdown {
+  position: relative;
+  display: inline-flex;
 }
 
-.modal-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.modal-actions button {
+.connect-type-menu {
+  display: none;
+  flex-direction: column;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 160px;
+  background: var(--panel-bg);
   border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  border-radius: 8px;
-  padding: 10px 4px;
-  font-size: 13px;
-  cursor: pointer;
+  border-radius: 10px;
+  padding: 6px;
+  gap: 2px;
+  box-shadow: 0 8px 24px var(--modal-shadow);
+  z-index: 45;
 }
 
-.modal-actions button:hover { background: var(--accent-soft); border-color: var(--accent); }
+.connect-dropdown.open .connect-type-menu { display: flex; }
 
-.modal-cancel {
+/* #toolbar button(ID 선택자라 우선순위가 높다)이 배경/패딩을 다시 덮어쓰지 않도록 #toolbar로
+   한 번 더 묶는다 — 사이드바 색상 스와치 때와 같은 종류의 우선순위 문제. */
+#toolbar .connect-type-menu button {
   border: none;
   background: none;
-  color: var(--muted);
+  color: var(--text);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
   cursor: pointer;
-  font-size: 12px;
-  text-decoration: underline;
+  white-space: nowrap;
 }
+
+#toolbar .connect-type-menu button:hover { background: var(--accent-soft); color: var(--accent); }
 
 /* ---------- 사진 위치/크기 조정(크롭) 모달 ---------- */
 

@@ -14,7 +14,6 @@ const linesEl = document.getElementById("lines-layer");
 const toolbarEl = document.getElementById("toolbar");
 const inspectorEl = document.getElementById("inspector");
 const emptyHintEl = document.getElementById("empty-hint");
-const relTypeModal = document.getElementById("rel-type-modal");
 const trashEl = document.getElementById("trash-drop");
 const cropModalEl = document.getElementById("crop-modal");
 
@@ -90,7 +89,14 @@ const toolbar = new Toolbar(toolbarEl, {
   },
   connect: () => {
     if (connectMode) exitConnectMode();
-    else enterConnectMode();
+    else toolbar.toggleTypeMenu();
+  },
+  pickConnectType: (type) => {
+    connectType = type;
+    connectMode = true;
+    connectPicks = [];
+    toolbar.setConnectMode(true, connectStatusText());
+    viewportEl.classList.add("connect-mode");
   },
   addTextbox: () => {
     const rect = viewportEl.getBoundingClientRect();
@@ -174,8 +180,11 @@ function handleCardClick(id) {
     const required = (CONNECT_STEP_HINTS[connectType] || []).length || 2;
     if (connectPicks.length >= required) {
       finalizeConnection(connectType, connectPicks);
-      connectPicks = [];
-      renderer.setSelectedMany([]);
+      // 관계 하나를 만들고 나면 계속 연결 모드에 머무르지 않고 자동으로 빠져나간다(예전엔 같은
+      // 유형으로 계속 이어붙일 수 있게 켜진 채로 뒀는데, 매번 다시 "&관계"를 눌러야 하는 편이
+      // "체크가 안 풀린다"는 혼란이 없다).
+      exitConnectMode();
+      return;
     }
     toolbar.setConnectMode(true, connectStatusText());
     return;
@@ -232,28 +241,6 @@ function handleLineClick(relId) {
   renderer.setSelectedTextBox(null);
   renderer.setSelectedLine(relId);
   inspector.openRelationship(rel);
-}
-
-/** "관계 연결" 클릭 시 사람을 고르기 전에 관계 유형부터 먼저 고르게 한다. */
-function enterConnectMode() {
-  relTypeModal.classList.add("open");
-  const cleanup = () => {
-    relTypeModal.classList.remove("open");
-    relTypeModal.onclick = null;
-  };
-  relTypeModal.onclick = (e) => {
-    const btn = e.target.closest("button[data-type]");
-    if (btn) {
-      connectType = btn.dataset.type;
-      connectMode = true;
-      connectPicks = [];
-      toolbar.setConnectMode(true, connectStatusText());
-      viewportEl.classList.add("connect-mode");
-      cleanup();
-    } else if (e.target.dataset.action === "cancel" || e.target === relTypeModal) {
-      cleanup();
-    }
-  };
 }
 
 function exitConnectMode() {
@@ -316,8 +303,7 @@ tree.onChange(() => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  relTypeModal.classList.remove("open");
-  relTypeModal.onclick = null;
+  toolbar.closeTypeMenu();
   if (connectMode) exitConnectMode();
   inspector.close();
   renderer.setSelected(null);

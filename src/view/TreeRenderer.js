@@ -363,9 +363,6 @@ export class TreeRenderer {
     // 드래그가 어떻게 끝나든(커밋/취소/삭제) 흐리게+자물쇠 미리보기는 항상 원래대로 되돌린다.
     for (const el of g.lockedEls) el?.classList.remove("drag-locked-preview");
     if (droppedOnTrash) {
-      if (!confirm(`선택한 ${g.positions.size}개를 삭제할까요? 인물이면 연결된 관계선도 함께 삭제됩니다.`)) {
-        return;
-      }
       for (const [id, start] of g.positions) {
         if (start.type === "person") this.tree.removePerson(id);
         else this.tree.removeTextBox(id);
@@ -454,10 +451,8 @@ export class TreeRenderer {
         }
         this._flushVisualUpdate(person, el);
         if (droppedOnTrash) {
-          if (confirm("이 인물을 삭제할까요? 연결된 관계선도 함께 삭제됩니다.")) {
-            this.tree.removePerson(person.id);
-            return;
-          }
+          this.tree.removePerson(person.id);
+          return;
         }
         this.tree.updatePerson(person.id, { x: person.x, y: person.y });
       },
@@ -511,10 +506,8 @@ export class TreeRenderer {
           return;
         }
         if (droppedOnTrash) {
-          if (confirm("이 텍스트 박스를 삭제할까요?")) {
-            this.tree.removeTextBox(box.id);
-            return;
-          }
+          this.tree.removeTextBox(box.id);
+          return;
         }
         this.tree.updateTextBox(box.id, { x: box.x, y: box.y });
       },

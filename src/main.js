@@ -586,39 +586,38 @@ tree.onChange((type, payload) => {
   if (type === "relationship:remove" && inspector.relationship?.id === payload) inspector.close();
 });
 
-// 모바일 하단 시트: 내용이 이미 맨 위(scrollTop 0)까지 스크롤된 상태에서 계속 아래로 당기면,
-// 시트 전체가 손가락을 따라 내려가다가(당겨서 닫기, 네이티브 바텀시트에서 흔한 제스처) 일정
-// 거리 이상 당겨지면 닫히고, 안 되면 다시 스냅백된다. 스크롤이 맨 위가 아니면(아직 더 볼 내용이
-// 남아있으면) 평범한 내부 스크롤 그대로 둔다.
-let sheetDrag = null; // { pointerId, startY, dy, dragging }
+// 모바일 하단 시트: 헤더(제목+× 있는 맨 위 줄)를 손가락으로 아래로 당기면 시트 전체가 그대로
+// 따라 내려가다가(당겨서 닫기), 일정 거리 이상 당겨지면 닫히고 아니면 원래 자리로 스냅백된다.
+// 처음엔 "스크롤이 맨 위(scrollTop 0)면 계속 당길 때 전환" 방식으로 만들었는데, 실제 터치에서
+// 브라우저가 첫 이동만으로 이미 "이건 스크롤이다"라고 판단해버려 그 뒤에 부르는 preventDefault가
+// 안 먹혀 들쭉날쭉했다(당겨도 안 닫히는 경우가 잦음) — 그래서 헤더 영역만 CSS로 아예 네이티브
+// 팬(스크롤)을 원천 차단(touch-action:none)해두고, 그 헤더를 잡았을 때만 이 제스처가 시작되게
+// 바꿨다. 헤더 자체가 스크롤 안 되는 요소라 처음부터 경합이 없다(콘텐츠 스크롤 영역은 그대로
+// 평범하게 스크롤됨). 헤더는 스크롤 맨 위일 때만 화면에 보이므로("스크롤 내려가면 시트 닫기"의
+// 원래 취지) 별도로 scrollTop을 확인할 필요도 없다.
+let sheetDrag = null; // { pointerId, startY, dy }
 const SHEET_DISMISS_THRESHOLD = 90;
 
 inspectorEl.addEventListener("pointerdown", (e) => {
   if (!isMobileLayout() || !inspectorEl.classList.contains("open")) return;
-  sheetDrag = { pointerId: e.pointerId, startY: e.clientY, dy: 0, dragging: false };
+  if (!e.target.closest(".inspector-header")) return; // 헤더를 잡았을 때만 시작
+  if (e.target.closest(".inspector-close")) return; // × 버튼 자체는 평범하게 클릭되게 둔다
+  sheetDrag = { pointerId: e.pointerId, startY: e.clientY, dy: 0 };
+  inspectorEl.style.transition = "none"; // 드래그 중엔 트랜지션을 꺼서 손가락을 그대로 따라가게
+  try { inspectorEl.setPointerCapture(e.pointerId); } catch { /* ignore */ }
 });
 
 inspectorEl.addEventListener("pointermove", (e) => {
   if (!sheetDrag || e.pointerId !== sheetDrag.pointerId) return;
-  const dy = e.clientY - sheetDrag.startY;
-  if (!sheetDrag.dragging) {
-    // 아직 "당겨서 닫기"로 확정하기 전 — 스크롤이 맨 위이고 아래로 당기는 중일 때만 전환한다.
-    // (조건을 안 만족하면 그냥 평범한 내부 스크롤로 흘려보낸다 — preventDefault를 안 부름)
-    if (inspectorEl.scrollTop > 0 || dy <= 0) return;
-    sheetDrag.dragging = true;
-    inspectorEl.style.transition = "none"; // 드래그 중엔 트랜지션을 꺼서 손가락을 그대로 따라가게
-    try { inspectorEl.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-  }
-  e.preventDefault(); // 브라우저 기본 오버스크롤(바운스)을 막고 우리가 직접 옮긴다
-  sheetDrag.dy = Math.max(0, dy);
+  e.preventDefault();
+  sheetDrag.dy = Math.max(0, e.clientY - sheetDrag.startY);
   inspectorEl.style.transform = `translateY(${sheetDrag.dy}px)`;
 }, { passive: false });
 
 function endSheetDrag(e) {
   if (!sheetDrag || (e && e.pointerId !== sheetDrag.pointerId)) return;
-  const { dragging, dy } = sheetDrag;
+  const { dy } = sheetDrag;
   sheetDrag = null;
-  if (!dragging) return;
   inspectorEl.style.transition = "";
   inspectorEl.style.transform = ""; // 인라인을 지워 .open의 translateY(0)(또는 닫히면 100%)로 되돌아가게
   if (dy > SHEET_DISMISS_THRESHOLD) inspector.close();

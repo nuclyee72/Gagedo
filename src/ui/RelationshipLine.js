@@ -7,6 +7,7 @@ export const TYPE_LABEL = {
   "parent-child": "",
   spouse: "",
   custom: "",
+  arrow: "",
 };
 
 // 유형별 기본 색(rel.color가 없을 때만 씀). 선 종류(dash)는 더 이상 유형별 기본값이 없다 —
@@ -17,6 +18,7 @@ const TYPE_STYLE = {
   "parent-child": { stroke: "#5b6b8c" },
   spouse: { stroke: "#5b6b8c" },
   custom: { stroke: "#8a8f98" },
+  arrow: { stroke: "#3f6fd6" },
 };
 
 /** 사이드바에 보여줄 유형 이름(읽기 전용 표시용 — 유형 자체는 바꿀 수 없다). */
@@ -25,6 +27,7 @@ export const TYPE_DISPLAY_NAME = {
   "parent-child": "부모-자식(부모2)",
   spouse: "배우자",
   custom: "기타",
+  arrow: "화살표",
 };
 
 /** 선 종류 프리셋 — rel.lineStyle에 이 중 하나의 key를 저장한다(없으면 "solid"가 기본). */
@@ -45,6 +48,32 @@ export function defaultColorFor(type) {
 const LABEL_HIT_W = 56;
 const LABEL_HIT_H = 18;
 
+/** "화살표" 유형 전용 화살촉 — 관계선마다 id를 따로 줘서(rel.id 기반) 여러 화살표가 한 화면에
+ * 있어도 marker-end="url(#...)" 참조가 서로 안 겹치게 한다. 색은 이 선 자신의 stroke와 항상
+ * 같아야 하므로 applyLineStyle이 매번 이 안의 path fill도 같이 갱신한다. */
+function createArrowMarker(relId) {
+  const defs = document.createElementNS(SVG_NS, "defs");
+  const marker = document.createElementNS(SVG_NS, "marker");
+  marker.setAttribute("id", arrowMarkerId(relId));
+  marker.setAttribute("viewBox", "0 0 10 10");
+  marker.setAttribute("refX", "10");
+  marker.setAttribute("refY", "5");
+  marker.setAttribute("markerWidth", "6");
+  marker.setAttribute("markerHeight", "6");
+  // 화살표가 그려지는 방향(선분의 진행 방향)에 맞춰 화살촉이 자동으로 돌아가게 한다.
+  marker.setAttribute("orient", "auto-start-reverse");
+  const path = document.createElementNS(SVG_NS, "path");
+  path.classList.add("rel-arrowhead-path");
+  path.setAttribute("d", "M 0 0 L 10 5 L 0 10 Z");
+  marker.appendChild(path);
+  defs.appendChild(marker);
+  return defs;
+}
+
+function arrowMarkerId(relId) {
+  return `rel-arrowhead-${relId}`;
+}
+
 export function createLineElement(rel) {
   const g = document.createElementNS(SVG_NS, "g");
   g.classList.add("rel-line");
@@ -56,6 +85,8 @@ export function createLineElement(rel) {
 
   const visible = document.createElementNS(SVG_NS, "polyline");
   visible.classList.add("rel-line-visible");
+
+  if (rel.type === "arrow") g.appendChild(createArrowMarker(rel.id));
 
   // 기본 라벨 텍스트가 비어 있어도(부모-자식/배우자/형제자매) 그 자리를 클릭해 커스텀 라벨을
   // 넣을 수 있도록, 보이지 않는 고정 크기 클릭 영역을 텍스트와 별도로 둔다.
@@ -76,12 +107,21 @@ export function applyLineStyle(g, rel) {
   const style = TYPE_STYLE[rel.type] || TYPE_STYLE.custom;
   const visible = g.querySelector(".rel-line-visible");
   // rel.color가 있으면(사이드바에서 사용자가 직접 고른 값) 유형 기본색 대신 그걸 쓴다.
-  visible.setAttribute("stroke", rel.color || style.stroke);
+  const color = rel.color || style.stroke;
+  visible.setAttribute("stroke", color);
   visible.setAttribute("stroke-width", "2.5");
   // 선 종류는 이제 유형별 기본값이 없다 — rel.lineStyle이 없으면 항상 "실선"이 기본이다.
   const dasharray = LINE_STYLE_PRESETS[rel.lineStyle || "solid"].dash;
   if (dasharray) visible.setAttribute("stroke-dasharray", dasharray);
   else visible.removeAttribute("stroke-dasharray");
+
+  if (rel.type === "arrow") {
+    visible.setAttribute("marker-end", `url(#${arrowMarkerId(rel.id)})`);
+    const arrowPath = g.querySelector(".rel-arrowhead-path");
+    if (arrowPath) arrowPath.setAttribute("fill", color); // 화살촉도 선과 항상 같은 색
+  } else {
+    visible.removeAttribute("marker-end");
+  }
 
   const label = g.querySelector(".rel-line-label");
   label.textContent = rel.label || TYPE_LABEL[rel.type] || "";

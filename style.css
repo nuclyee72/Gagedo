@@ -562,10 +562,19 @@ html, body {
   pointer-events: none;
 }
 
+/* "화살표" 유형의 화살촉(<marker> 안의 <path>) — 선 자신과 별개의 엘리먼트라 fill은
+   RelationshipLine.js가 매번 선의 stroke와 같은 색으로 맞춰 넣지만(applyLineStyle),
+   아래 다크모드 밝기 보정처럼 CSS 필터는 자동으로 안 따라오므로 선과 나란히 같이 걸어둔다
+   (안 그러면 다크모드에서 화살촉만 원래 밝기로 남아 선보다 어둡게 붕 떠 보인다). */
+.rel-arrowhead-path {
+  stroke: none;
+}
+
 /* 관계선 색은 RelationshipLine.js가 stroke 속성으로 직접 지정한다(TYPE_STYLE) — SVG presentation
    attribute는 CSS보다 우선순위가 낮으므로, 이 규칙이 없어도 이미 색을 덮어쓸 수 있지만 지금은
    같은 색을 그대로 두고 다크 배경에서도 잘 보이도록 밝기만 살짝 올린다. */
-:root[data-theme="dark"] .rel-line-visible {
+:root[data-theme="dark"] .rel-line-visible,
+:root[data-theme="dark"] .rel-arrowhead-path {
   filter: brightness(1.5) saturate(1.1);
 }
 

@@ -32,6 +32,13 @@ export class TreeRenderer {
 
     this._editingRelId = null; // 지금 텍스트를 편집 중인 관계선 id(한 번에 하나만)
 
+    // "화살표" 관계선의 화살촉을 카드 중심이 아니라 사진 원 가장자리에 그리기 위한 반지름.
+    // 다른 관계선은 중심까지 그어도 카드가 그 위에 덮여서 자연히 안 보이지만, 화살촉은 카드
+    // 밖으로 튀어나와야 보이므로 이 값만큼 끝점을 당긴다. --photo-size(style.css)와 항상
+    // 같은 값이어야 하므로 하드코딩하지 않고 실제 CSS 변수 계산값에서 읽는다.
+    const photoSizePx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--photo-size"));
+    this._photoRadius = (Number.isFinite(photoSizePx) ? photoSizePx : 96) / 2;
+
     tree.onChange((type, payload) => this._handle(type, payload));
     linesEl.addEventListener("click", (e) => {
       // 텍스트가 비어 있는(기본 라벨을 없앤) 관계선도 그 자리를 클릭해 라벨을 넣을 수 있도록,
@@ -835,6 +842,12 @@ export class TreeRenderer {
    * 표준 가계도(족보) 모양으로 그린다.
    */
   _computeLinePoints(rel, a, b) {
+    if (rel.type === "arrow") {
+      // 화살촉(marker-end)이 b의 카드 밑에 완전히 가려버리지 않도록, 끝점을 사진 원 가장자리까지만
+      // 당긴다(다른 유형은 중심까지 그어도 카드가 덮어서 문제없지만, 화살촉은 카드 밖으로 튀어나와야
+      // 보이므로 이 유형만 예외).
+      return [{ x: a.x, y: a.y }, this._pullBackToPhotoEdge(a, b)];
+    }
     if (rel.type !== "parent-child") {
       return [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
     }
@@ -868,6 +881,16 @@ export class TreeRenderer {
       { x: b.x, y: busY },
       { x: b.x, y: b.y },
     ];
+  }
+
+  /** b를 a 방향으로 사진 반지름만큼 당긴 점을 돌려준다(화살표 유형 전용). 두 사람이 반지름보다
+   * 가까이 붙어 있어 부호가 뒤집힐 수 있는 경우엔 0으로 clamp해서 화살촉이 튕겨나가지 않게 한다. */
+  _pullBackToPhotoEdge(a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return { x: b.x, y: b.y };
+    const t = Math.max(0, (len - this._photoRadius) / len);
+    return { x: a.x + dx * t, y: a.y + dy * t };
   }
 
   /** rel(부모-자식/부모2)의 배우자를 찾는다 — viaSpouseId가 있으면 그걸 우선하고, 없으면(예전 데이터) 첫 배우자로 추측한다. */

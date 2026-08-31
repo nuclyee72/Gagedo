@@ -15,6 +15,7 @@ export class Toolbar {
             <button type="button" data-type="parent-child-solo">부모-자식(부모1)</button>
             <button type="button" data-type="parent-child">부모-자식(부모2)</button>
             <button type="button" data-type="spouse">배우자</button>
+            <button type="button" data-type="arrow">화살표</button>
             <button type="button" data-type="custom">기타</button>
           </div>
         </div>

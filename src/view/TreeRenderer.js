@@ -246,7 +246,17 @@ export class TreeRenderer {
     // 잠겨서 이번엔 안 움직이는 대상은 드래그가 진행되는 동안만 흐리게 + 자물쇠 표시를 띄워서
     // "왜 이것만 안 따라오지?"를 바로 알 수 있게 한다 — 드래그가 끝나면 원래대로 되돌린다.
     for (const el of lockedEls) el?.classList.add("drag-locked-preview");
-    this._groupDragState = { positions, dx: 0, dy: 0, anchorId, anchorType, lockedEls };
+
+    // 그룹이 움직이는 동안 다시 그려야 할 관계선을 미리 한 번만 합집합으로 구해 캐싱해둔다 —
+    // 예전엔 프레임마다 "멤버 하나당 관계 전체 훑기"를 멤버 수만큼 반복해서(_updateLinesFor를
+    // 멤버마다 호출), 사람이 많이 선택된 채로 한 덩어리로 끌면 멤버 수 × 관계 수에 비례해
+    // 버벅였다 — 멤버 구성 자체는 드래그 도중 안 바뀌므로 여기서 한 번만 구해두고, 매 프레임엔
+    // 이 캐시만 다시 그린다(_scheduleGroupVisualUpdate).
+    const affectedLineIds = new Set();
+    for (const id of positions.keys()) {
+      for (const relId of this._affectedLineIds(id)) affectedLineIds.add(relId);
+    }
+    this._groupDragState = { positions, dx: 0, dy: 0, anchorId, anchorType, lockedEls, affectedLineIds };
   }
 
   _updateGroupDrag(dxWorld, dyWorld) {
@@ -271,28 +281,20 @@ export class TreeRenderer {
       }
     }
 
+    // 모델 좌표만 갱신한다(가벼움) — 실제 DOM 반영(카드/텍스트박스 위치 + 영향받는 관계선 다시
+    // 그리기)은 _scheduleGroupVisualUpdate가 프레임당 한 번으로 묶어서 처리한다.
     for (const [id, start] of g.positions) {
       const nx = start.x + g.dx + snapDx;
       const ny = start.y + g.dy + snapDy;
       if (start.type === "person") {
         const p = this.tree.people.get(id);
-        if (!p) continue;
-        p.x = nx;
-        p.y = ny;
-        const el = this.cardEls.get(id);
-        if (el) this._scheduleVisualUpdate(p, el);
+        if (p) { p.x = nx; p.y = ny; }
       } else {
         const b = this.tree.textBoxes.get(id);
-        if (!b) continue;
-        b.x = nx;
-        b.y = ny;
-        const el = this.textBoxEls.get(id);
-        if (el) {
-          el.style.left = `${nx}px`;
-          el.style.top = `${ny}px`;
-        }
+        if (b) { b.x = nx; b.y = ny; }
       }
     }
+    this._scheduleGroupVisualUpdate();
 
     if (snapped) {
       this._setGuide("h", snapped.guideY);
@@ -303,12 +305,54 @@ export class TreeRenderer {
     }
   }
 
+  /**
+   * 그룹 드래그 중 DOM 반영을 프레임당 한 번으로 묶는다 — 개별 카드 드래그의 _scheduleVisualUpdate
+   * 와 같은 이유(포인터 이벤트가 화면 주사율보다 훨씬 잦아도 그리기는 프레임당 한 번이면 충분).
+   * 다만 개별 카드용 그 함수를 그대로 재사용하지 않는 이유: 그 함수는 "카드 하나당" 호출될 때마다
+   * _updateLinesFor(관계 전체 훑기)를 또 하나씩 실행하므로, 그룹 멤버 수만큼 그대로 반복 호출하면
+   * (멤버 수 × 관계 수)만큼 매 프레임 느려진다. 여기서는 위치만 멤버 수만큼 쓰고(가벼움), 관계선은
+   * _beginGroupDrag가 미리 구해둔 합집합(affectedLineIds)만 한 번씩만 다시 그린다.
+   */
+  _scheduleGroupVisualUpdate() {
+    if (this._groupMoveRaf) return;
+    this._groupMoveRaf = requestAnimationFrame(() => {
+      this._groupMoveRaf = null;
+      const g = this._groupDragState;
+      if (!g) return;
+      for (const [id, start] of g.positions) {
+        if (start.type === "person") {
+          const p = this.tree.people.get(id);
+          const el = this.cardEls.get(id);
+          if (p && el) {
+            el.style.left = `${p.x}px`;
+            el.style.top = `${p.y}px`;
+          }
+        } else {
+          const b = this.tree.textBoxes.get(id);
+          const el = this.textBoxEls.get(id);
+          if (b && el) {
+            el.style.left = `${b.x}px`;
+            el.style.top = `${b.y}px`;
+          }
+        }
+      }
+      for (const relId of g.affectedLineIds) this._updateLine(relId);
+    });
+  }
+
   /** droppedOnTrash면 그룹 전체(잠기지 않아 실제로 움직인 대상들)를 확인 후 한 번에 지운다 —
    * 아니면 그동안 옮긴 좌표를 전부 커밋한다. */
   _commitGroupDrag(droppedOnTrash) {
     const g = this._groupDragState;
     if (!g) return;
     this._groupDragState = null;
+    // 아직 다음 프레임을 기다리는 그룹 DOM 반영이 있다면 취소한다 — 이 시점에 model 값은
+    // 이미 최종값이고, 아래에서 tree.updatePerson/updateTextBox(또는 삭제)가 어차피 정확한
+    // 최종 상태를 다시 그리므로 뒤늦게 한 번 더 그릴 필요가 없다.
+    if (this._groupMoveRaf) {
+      cancelAnimationFrame(this._groupMoveRaf);
+      this._groupMoveRaf = null;
+    }
     // 드래그가 어떻게 끝나든(커밋/취소/삭제) 흐리게+자물쇠 미리보기는 항상 원래대로 되돌린다.
     for (const el of g.lockedEls) el?.classList.remove("drag-locked-preview");
     if (droppedOnTrash) {
@@ -946,7 +990,12 @@ export class TreeRenderer {
     updateLinePosition(g, this._computeLinePoints(rel, a, b));
   }
 
-  _updateLinesFor(personId) {
+  /** personId 하나가 움직였을 때 다시 그려야 하는 관계선 id 집합을 계산만 한다(그리지는 않음) —
+   * 순수 계산 부분을 따로 빼서 _updateLinesFor(단일 이동, 즉시 계산+그리기)와 그룹 드래그
+   * (_beginGroupDrag가 멤버 전원에 대해 한 번만 합집합을 구해 캐싱)가 이 로직을 공유하게 한다.
+   * 그룹 드래그 중 매 프레임마다 멤버 수 × 관계 수만큼 이 계산을 반복하면(예전 구현) 인원이 많을
+   * 때 버벅였다 — 그래서 그룹 쪽은 이 함수를 프레임마다가 아니라 드래그 시작 시 딱 한 번만 쓴다. */
+  _affectedLineIds(personId) {
     const affected = new Set();
     for (const rel of this.tree.relationships.values()) {
       if (rel.fromId === personId || rel.toId === personId || rel.viaSpouseId === personId) {
@@ -975,7 +1024,11 @@ export class TreeRenderer {
         if (rel.type === "parent-child" && groupKeys.has(this._parentPairKey(rel))) affected.add(rel.id);
       }
     }
-    for (const relId of affected) this._updateLine(relId);
+    return affected;
+  }
+
+  _updateLinesFor(personId) {
+    for (const relId of this._affectedLineIds(personId)) this._updateLine(relId);
   }
 
   /** 부모-자식(부모2) 선을 전부 다시 그린다 — 형제자매 그룹 구성이 바뀌는(자식/부모 추가·삭제) 시점에 쓴다. */

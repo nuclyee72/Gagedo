@@ -27,6 +27,7 @@ export class TreeModel {
       id: uuid(), name, photoId: null, photoUrl: null, tags: [], x, y, notes: "",
       borderColor: null, borderWidth: null, // 사진 테두리 커스텀(색/굵기) — null이면 기본값(테마 색/3px) 사용
       photoShape: "circle", // "circle" | "square" | "rounded"
+      locked: false, // true면 드래그로 위치를 못 옮긴다(TreeRenderer._addCard가 검사)
     };
     this.people.set(person.id, person);
     this._emit("person:add", person);

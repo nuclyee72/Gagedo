@@ -196,11 +196,13 @@ export class TreeRenderer {
     const drag = attachCardDrag(el, {
       getScale: () => this.camera.scale,
       onDragStart: () => {
+        if (person.locked) return; // 잠긴 인물은 드래그로 못 옮긴다 — 휴지통 힌트도 안 보여준다.
         rawX = person.x;
         rawY = person.y;
         this._showTrash();
       },
       onMove: (dx, dy, e) => {
+        if (person.locked) return;
         rawX += dx;
         rawY += dy;
         const snapped = this._computeSnap(rawX, rawY, person);
@@ -213,6 +215,7 @@ export class TreeRenderer {
         this._setTrashArmed(e && this._isOverTrash(e.clientX, e.clientY));
       },
       onMoveEnd: (e) => {
+        if (person.locked) return;
         this._hideSnapGuides();
         this._flushVisualUpdate(person, el);
         const droppedOnTrash = e && this._isOverTrash(e.clientX, e.clientY);

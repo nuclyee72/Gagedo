@@ -60,35 +60,43 @@ export class InspectorPanel {
         <button type="button" class="inspector-close" aria-label="닫기">×</button>
       </div>
       <label>이름
-        <input type="text" class="f-name" placeholder="이름">
+        <div class="f-name-row">
+          <input type="text" class="f-name" placeholder="이름">
+          <button type="button" class="f-lock-btn" title="위치 잠금" aria-label="위치 잠금">🔓</button>
+        </div>
       </label>
       <label>사진</label>
       <div class="photo-drop" tabindex="0" title="클릭해서 파일 선택 · 드래그해서 놓기 · Ctrl+V로 붙여넣기">
         <img class="photo-drop-preview" src="${DEFAULT_AVATAR}" alt="">
       </div>
-      <input type="text" class="f-photo-url" placeholder="이미지">
-      <button type="button" class="f-photo-edit" hidden>이미지 수정</button>
+      <div class="f-photo-row">
+        <input type="text" class="f-photo-url" placeholder="이미지">
+        <button type="button" class="f-photo-edit" hidden title="이미지 수정" aria-label="이미지 수정">✏️</button>
+      </div>
       <input type="file" accept="image/*" class="f-photo-file" style="display:none">
-      <label>사진 모양</label>
-      <div class="p-shape-options">
-        ${PHOTO_SHAPES.map(({ shape, title }) => `
-          <button type="button" class="p-shape-btn" data-shape="${shape}" title="${title}">
-            <span class="p-shape-preview shape-${shape}"></span>
-          </button>
-        `).join("")}
-      </div>
-      <label>테두리 색상</label>
-      <div class="rel-color-swatches p-border-swatches">
-        ${COLOR_PRESETS.map((c) => `<button type="button" class="rel-color-swatch" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("")}
-      </div>
-      <div class="rel-color-custom-row">
-        <input type="color" class="p-border-color rel-color-input" title="직접 고르기">
-        <button type="button" class="p-border-reset rel-color-reset">기본값</button>
-      </div>
-      <label>테두리 굵기 <span class="p-border-width-value"></span>
-        <input type="range" class="p-border-width" min="0" max="10" step="1">
-      </label>
-      <label>속성(태그)
+      <details class="p-attr-section">
+        <summary><span class="p-attr-arrow">▸</span> 속성</summary>
+        <label>사진 모양</label>
+        <div class="p-shape-options">
+          ${PHOTO_SHAPES.map(({ shape, title }) => `
+            <button type="button" class="p-shape-btn" data-shape="${shape}" title="${title}">
+              <span class="p-shape-preview shape-${shape}"></span>
+            </button>
+          `).join("")}
+        </div>
+        <label>테두리 색상</label>
+        <div class="rel-color-swatches p-border-swatches">
+          ${COLOR_PRESETS.map((c) => `<button type="button" class="rel-color-swatch" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("")}
+        </div>
+        <div class="rel-color-custom-row">
+          <input type="color" class="p-border-color rel-color-input" title="직접 고르기">
+          <button type="button" class="p-border-reset rel-color-reset">기본값</button>
+        </div>
+        <label>테두리 굵기 <span class="p-border-width-value"></span>
+          <input type="range" class="p-border-width" min="0" max="10" step="1">
+        </label>
+      </details>
+      <label>태그
         <input type="text" class="f-tag-input" placeholder="태그 입력 후 Enter" list="tag-suggestions">
         <datalist id="tag-suggestions"></datalist>
       </label>
@@ -103,6 +111,12 @@ export class InspectorPanel {
 
     this.el.querySelector(".f-name").addEventListener("input", (e) => {
       this._patch({ name: e.target.value });
+    });
+
+    this.el.querySelector(".f-lock-btn").addEventListener("click", () => {
+      if (!this.person) return;
+      this._patch({ locked: !this.person.locked });
+      this._syncLockButton();
     });
 
     this.el.querySelector(".f-notes").addEventListener("input", (e) => {
@@ -211,6 +225,15 @@ export class InspectorPanel {
     const dropzone = this.el.querySelector(".photo-drop");
     dropzone.classList.remove("shape-circle", "shape-square", "shape-rounded", "shape-diamond");
     dropzone.classList.add(`shape-${shape}`);
+  }
+
+  /** 이름 옆 좌물쇠 — 잠기면 캔버스에서 드래그로 위치를 못 옮긴다(TreeRenderer.js가 검사). */
+  _syncLockButton() {
+    const locked = !!this.person?.locked;
+    const btn = this.el.querySelector(".f-lock-btn");
+    btn.textContent = locked ? "🔒" : "🔓";
+    btn.classList.toggle("active", locked);
+    btn.title = locked ? "잠김 — 눌러서 풀기" : "위치 잠금";
   }
 
   /** 사진 원 테두리 색/굵기 — 관계선 색상 선택기와 같은 스와치+커스텀 색상+기본값 되돌리기 구성. */
@@ -384,6 +407,7 @@ export class InspectorPanel {
     this.el.querySelector(".f-notes").value = person.notes || "";
     this.el.querySelector(".f-photo-url").value = "";
     this._renderTags();
+    this._syncLockButton();
     this._syncPhotoShapeControls();
     this._syncBorderControls(person);
     this._updateEditButtonVisibility();

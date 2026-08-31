@@ -12,13 +12,16 @@ export const TYPE_LABEL = {
 
 // 유형별 기본 색(rel.color가 없을 때만 씀). 선 종류(dash)는 더 이상 유형별 기본값이 없다 —
 // rel.lineStyle이 없으면 항상 "실선"이 기본이다(LINE_STYLE_PRESETS의 solid).
+// 예전엔 유형마다 기본색이 달라서(기타=회색, 화살표=파랑 등) 색을 따로 안 고르면 관계선끼리
+// 괜히 안 어울려 보였다 — 유형 구분은 이미 선 모양/화살촉/라벨로 되니, 기본색은 전부 하나로
+// 통일한다(사용자가 사이드바에서 직접 고르면 그 색이 그대로 우선한다).
+const DEFAULT_STROKE = "#5b6b8c";
 const TYPE_STYLE = {
-  // 배우자 선도 부모-자식과 같은 색을 쓴다 — 가족선이 하나로 이어져 보이도록.
-  "parent-child-solo": { stroke: "#5b6b8c" },
-  "parent-child": { stroke: "#5b6b8c" },
-  spouse: { stroke: "#5b6b8c" },
-  custom: { stroke: "#8a8f98" },
-  arrow: { stroke: "#3f6fd6" },
+  "parent-child-solo": { stroke: DEFAULT_STROKE },
+  "parent-child": { stroke: DEFAULT_STROKE },
+  spouse: { stroke: DEFAULT_STROKE },
+  custom: { stroke: DEFAULT_STROKE },
+  arrow: { stroke: DEFAULT_STROKE },
 };
 
 /** 사이드바에 보여줄 유형 이름(읽기 전용 표시용 — 유형 자체는 바꿀 수 없다). */

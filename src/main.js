@@ -428,15 +428,30 @@ tree.onChange(() => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  toolbar.closeTypeMenu();
-  if (connectMode) exitConnectMode();
-  inspector.close();
-  renderer.setSelected(null);
-  renderer.setSelectedTextBox(null);
-  renderer.setSelectedLine(null);
-  renderer.clearMultiSelection();
-  hideBulkToolbar();
+  if (e.key === "Escape") {
+    toolbar.closeTypeMenu();
+    if (connectMode) exitConnectMode();
+    inspector.close();
+    renderer.setSelected(null);
+    renderer.setSelectedTextBox(null);
+    renderer.setSelectedLine(null);
+    renderer.clearMultiSelection();
+    hideBulkToolbar();
+    return;
+  }
+
+  // Ctrl+Z(실행취소) / Ctrl+Y·Ctrl+Shift+Z(다시실행) — 이름/메모/태그 같은 입력창에 포커스가
+  // 있을 땐 가로채지 않는다(브라우저 자체의 "글자 입력 되돌리기"가 그대로 동작해야 하므로).
+  const isTyping = e.target.matches?.("input, textarea, [contenteditable='true']");
+  if (isTyping) return;
+  const key = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && key === "z" && !e.shiftKey) {
+    e.preventDefault();
+    undoMgr.performUndo();
+  } else if ((e.ctrlKey || e.metaKey) && (key === "y" || (key === "z" && e.shiftKey))) {
+    e.preventDefault();
+    undoMgr.performRedo();
+  }
 });
 
 async function init() {

@@ -215,8 +215,13 @@ export class TreeRenderer {
   }
 
   /** 마키 선택 인원이 2명 이상일 때, 그중 하나를 드래그하면 전체가 같은 만큼 같이 움직인다 —
-   * 잠긴 대상은 처음 좌표를 기록 대상에서 빼서 그것만 안 움직이게 한다(선택 자체는 유지). */
-  _beginGroupDrag() {
+   * 잠긴 대상은 처음 좌표를 기록 대상에서 빼서 그것만 안 움직이게 한다(선택 자체는 유지).
+   * anchorId/anchorType: 실제로 손으로 잡아 끄는 대상 — 그룹 전체는 서로 상대 위치를 유지한 채
+   * 통째로 움직이되, 스냅(자동 클리핑)은 이 anchor 하나만 기준으로 검사해서 그 결과(스냅으로
+   * 보정된 만큼)를 그룹 전체에 동일하게 더해준다("이 카드를 스냅에 맞추면 나머지도 딱 붙어 따라
+   * 온다"는 느낌). anchor가 텍스트박스면(원래도 텍스트박스는 스냅이 없었으므로) 스냅 없이 그냥
+   * 델타만 적용한다. */
+  _beginGroupDrag(anchorId, anchorType) {
     const positions = new Map(); // id -> { x, y, type }
     for (const id of this.multiSelected.people) {
       const p = this.tree.people.get(id);
@@ -226,7 +231,7 @@ export class TreeRenderer {
       const b = this.tree.textBoxes.get(id);
       if (b && !b.locked) positions.set(id, { x: b.x, y: b.y, type: "textbox" });
     }
-    this._groupDragState = { positions, dx: 0, dy: 0 };
+    this._groupDragState = { positions, dx: 0, dy: 0, anchorId, anchorType };
   }
 
   _updateGroupDrag(dxWorld, dyWorld) {
@@ -234,9 +239,26 @@ export class TreeRenderer {
     if (!g) return;
     g.dx += dxWorld;
     g.dy += dyWorld;
+
+    // anchor(실제로 끈 카드) 하나만 스냅을 검사하고, 그 보정값(snapDx/Dy)을 그룹 전체에 똑같이
+    // 더한다 — 각자 따로 스냅하면 서로 다른 지점에 끌려가 그룹 모양이 흐트러지므로.
+    let snapDx = 0, snapDy = 0;
+    let snapped = null;
+    const anchorStart = g.positions.get(g.anchorId);
+    if (g.anchorType === "person" && anchorStart) {
+      const anchorPerson = this.tree.people.get(g.anchorId);
+      if (anchorPerson) {
+        const rawX = anchorStart.x + g.dx;
+        const rawY = anchorStart.y + g.dy;
+        snapped = this._computeSnap(rawX, rawY, anchorPerson);
+        snapDx = snapped.x - rawX;
+        snapDy = snapped.y - rawY;
+      }
+    }
+
     for (const [id, start] of g.positions) {
-      const nx = start.x + g.dx;
-      const ny = start.y + g.dy;
+      const nx = start.x + g.dx + snapDx;
+      const ny = start.y + g.dy + snapDy;
       if (start.type === "person") {
         const p = this.tree.people.get(id);
         if (!p) continue;
@@ -255,6 +277,14 @@ export class TreeRenderer {
           el.style.top = `${ny}px`;
         }
       }
+    }
+
+    if (snapped) {
+      this._setGuide("h", snapped.guideY);
+      this._setGuide("v", snapped.guideX);
+      this._setExtraGuides(snapped.extraGuides);
+    } else {
+      this._hideSnapGuides();
     }
   }
 
@@ -321,7 +351,7 @@ export class TreeRenderer {
         if (person.locked) return; // 잠긴 인물은 드래그로 못 옮긴다 — 휴지통 힌트도 안 보여준다.
         // 마키로 2개 이상 골라둔 상태에서 그중 하나를 끌면, 그 묶음 전체가 같이 움직인다.
         if (this.multiSelected.people.has(person.id) && this.getMultiSelectionCount() >= 2) {
-          this._beginGroupDrag();
+          this._beginGroupDrag(person.id, "person");
         } else {
           rawX = person.x;
           rawY = person.y;
@@ -383,7 +413,7 @@ export class TreeRenderer {
       onDragStart: () => {
         if (box.locked) return; // 잠긴 텍스트 박스는 드래그로 못 옮긴다.
         if (this.multiSelected.textBoxes.has(box.id) && this.getMultiSelectionCount() >= 2) {
-          this._beginGroupDrag();
+          this._beginGroupDrag(box.id, "textbox");
         } else {
           rawX = box.x;
           rawY = box.y;

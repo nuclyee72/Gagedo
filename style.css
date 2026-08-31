@@ -358,15 +358,18 @@ html, body {
 .shape-square { border-radius: 6px; }
 .shape-rounded { border-radius: 22%; }
 
-/* border-color는 여기서 건드리지 않는다 — 사용자가 사진 테두리 색을 직접 골랐다면(PersonCard.js가
-   인라인 style.borderColor로 지정) 선택 표시 때문에 그 색이 가려지면 안 되므로, 선택 여부는
-   글로우(box-shadow)만으로 나타낸다.
+/* border-color(outline)는 여기서 건드리지 않는다 — 사용자가 사진 테두리 색을 직접 골랐다면
+   (PersonCard.js가 인라인 style.borderColor로 지정) 선택 표시 때문에 그 색이 가려지면 안 되므로.
+   대신 선택 여부는 outline과는 별개인 box-shadow 두 겹으로 나타낸다: 번짐 없는 또렷한 색
+   테두리(스프레드만 있고 blur는 0인 첫 번째 값)로 "테두리가 생겼다"는 게 확실히 보이게 하고,
+   그 바깥에 은은한 글로우(두 번째 값)를 더해 부드럽게 마무리한다 — 글로우만 있을 때는
+   경계가 흐릿해서 선택 여부가 잘 안 보인다는 피드백에 따라 추가.
    .marquee-hover: 마키로 사각형을 그리는 도중(아직 드롭 전) 그 안에 걸린 카드를 실시간으로
-   미리 보여주는 상태 — 확정된 .selected와 같은 글로우를 그대로 재사용해서 "이대로 떼면
+   미리 보여주는 상태 — 확정된 .selected와 같은 표시를 그대로 재사용해서 "이대로 떼면
    선택된다"는 걸 바로 알 수 있게 한다. */
 .person-card.selected .person-photo,
 .person-card.marquee-hover .person-photo {
-  box-shadow: 0 2px 12px var(--accent-glow);
+  box-shadow: 0 0 0 3px var(--accent), 0 2px 12px var(--accent-glow);
 }
 
 /* .drag-locked-preview: 마키로 걸렸거나(잠시 후 선택될) 이미 선택된 상태로 그룹을 끄는 중인데
@@ -490,10 +493,13 @@ html, body {
   border-color: var(--accent);
 }
 
+/* 사람 카드와 같은 이유로 border-color 변경만으로는(원래도 1px라 얇음) 선택 여부가 잘 안
+   보여서, 번짐 없는 또렷한 테두리(스프레드 2px, blur 0)를 box-shadow로 덧붙이고 그 바깥에
+   은은한 글로우를 더한다. */
 .text-box.selected .text-box-content,
 .text-box.marquee-hover .text-box-content {
   border-color: var(--accent);
-  box-shadow: 0 2px 12px var(--accent-glow);
+  box-shadow: 0 0 0 2px var(--accent), 0 2px 12px var(--accent-glow);
 }
 
 /* 사람 카드의 .drag-locked-preview와 같은 결 — 마키 미리보기 중이거나 그룹 드래그 중에 잠긴

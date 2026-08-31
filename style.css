@@ -853,6 +853,21 @@ html, body {
   gap: 8px;
 }
 
+/* 화살표 유형일 때만 보이는 구획(단방향/양방향 선택 + 방향 바꾸기 버튼) — #inspector의
+   flex-column 자식들과 같은 결로 안쪽도 세로로 gap을 둬서 라벨/버튼이 붙어 보이지 않게 한다.
+   display:flex를 직접 주는 선택자라 [hidden]과 우선순위가 같아져(둘 다 특정성 0,0,1,0) 나중에
+   나온 이 규칙이 이겨버리는(그래서 hidden이어도 계속 보이는) 문제가 있어, [hidden] 쪽을 별도로
+   한 번 더 못박아둔다. */
+.rel-arrow-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rel-arrow-section[hidden] {
+  display: none;
+}
+
 .rel-color-input {
   width: 44px;
   height: 30px;

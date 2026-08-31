@@ -50,6 +50,7 @@ export class InspectorPanel {
       const labelEl = this.el.querySelector(".rel-label");
       if (labelEl && document.activeElement !== labelEl) labelEl.value = payload.label || "";
       this._syncRelationshipColorAndStyle(payload);
+      this._syncArrowControls(payload);
     });
   }
 
@@ -483,7 +484,20 @@ export class InspectorPanel {
     this.el.querySelector(".rel-type-display").textContent = TYPE_DISPLAY_NAME[rel.type] || rel.type;
     this.el.querySelector(".rel-label").value = rel.label || "";
     this._syncRelationshipColorAndStyle(rel); // .rel-linestyle 값도 여기서 같이 채운다(중복 방지)
+    this._syncArrowControls(rel);
     this.el.classList.add("open");
+  }
+
+  /** 화살표 유형일 때만 보이는 컨트롤(단방향/양방향, 방향 바꾸기) — 다른 유형은 방향 개념이
+   * 없으므로(부모-자식/배우자/기타는 선 자체가 방향을 안 나타냄) 이 구획 전체를 숨긴다. */
+  _syncArrowControls(rel) {
+    const section = this.el.querySelector(".rel-arrow-section");
+    if (!section) return;
+    const isArrow = rel.type === "arrow";
+    section.hidden = !isArrow;
+    if (!isArrow) return;
+    const kindEl = this.el.querySelector(".rel-arrow-kind");
+    if (kindEl) kindEl.value = rel.bidirectional ? "both" : "one";
   }
 
   /** 색상 스와치의 "선택됨" 표시 + 네이티브 color input 값을 rel에 맞춰 갱신한다. */
@@ -505,6 +519,15 @@ export class InspectorPanel {
       </div>
       <label>유형</label>
       <div class="rel-type-display"></div>
+      <div class="rel-arrow-section" hidden>
+        <label>화살표 종류
+          <select class="rel-arrow-kind">
+            <option value="one">단방향</option>
+            <option value="both">양방향</option>
+          </select>
+        </label>
+        <button type="button" class="rel-arrow-flip">↔ 방향 바꾸기</button>
+      </div>
       <label>라벨
         <input type="text" class="rel-label" placeholder="예: 장남, 재혼 등">
       </label>
@@ -529,6 +552,19 @@ export class InspectorPanel {
     this.el.querySelector(".rel-label").addEventListener("input", (e) => {
       if (!this.relationship) return;
       this.tree.updateRelationship(this.relationship.id, { label: e.target.value });
+    });
+
+    this.el.querySelector(".rel-arrow-kind").addEventListener("change", (e) => {
+      if (!this.relationship) return;
+      this.tree.updateRelationship(this.relationship.id, { bidirectional: e.target.value === "both" });
+    });
+
+    // fromId/toId를 서로 바꿔서 화살표가 가리키는 방향을 뒤집는다(양방향이면 시각적으로는
+    // 표가 안 나지만, 나중에 단방향으로 바꿨을 때를 위해 어느 쪽이 "시작"인지는 계속 바뀐다).
+    this.el.querySelector(".rel-arrow-flip").addEventListener("click", () => {
+      if (!this.relationship) return;
+      const { fromId, toId } = this.relationship;
+      this.tree.updateRelationship(this.relationship.id, { fromId: toId, toId: fromId });
     });
 
     for (const sw of this.el.querySelectorAll(".rel-color-swatch")) {

@@ -906,9 +906,13 @@ export class TreeRenderer {
    */
   _computeLinePoints(rel, a, b) {
     if (rel.type === "arrow") {
-      // 화살촉(marker-end)이 b의 카드 밑에 완전히 가려버리지 않도록, 끝점을 사진 원 가장자리까지만
-      // 당긴다(다른 유형은 중심까지 그어도 카드가 덮어서 문제없지만, 화살촉은 카드 밖으로 튀어나와야
-      // 보이므로 이 유형만 예외).
+      // 화살촉(marker-end/marker-start)이 카드 밑에 완전히 가려버리지 않도록, 끝점을 사진 원
+      // 가장자리까지만 당긴다(다른 유형은 중심까지 그어도 카드가 덮어서 문제없지만, 화살촉은
+      // 카드 밖으로 튀어나와야 보이므로 이 유형만 예외). 양방향(bidirectional)이면 양쪽 다 화살촉이
+      // 붙으므로 두 끝 모두 당겨야 한다.
+      if (rel.bidirectional) {
+        return [this._pullBackToPhotoEdge(b, a), this._pullBackToPhotoEdge(a, b)];
+      }
       return [{ x: a.x, y: a.y }, this._pullBackToPhotoEdge(a, b)];
     }
     if (rel.type !== "parent-child") {

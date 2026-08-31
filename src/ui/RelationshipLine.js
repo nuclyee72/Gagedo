@@ -120,10 +120,16 @@ export function applyLineStyle(g, rel) {
 
   if (rel.type === "arrow") {
     visible.setAttribute("marker-end", `url(#${arrowMarkerId(rel.id)})`);
+    // rel.bidirectional이면 시작 쪽(fromId)에도 같은 화살촉을 하나 더 단다 — marker-start는
+    // marker-end와 같은 마커 정의를 그대로 써도 orient="auto-start-reverse" 덕분에 자동으로
+    // 반대 방향(바깥쪽)을 보게 그려진다(별도 마커를 안 만들어도 됨).
+    if (rel.bidirectional) visible.setAttribute("marker-start", `url(#${arrowMarkerId(rel.id)})`);
+    else visible.removeAttribute("marker-start");
     const arrowPath = g.querySelector(".rel-arrowhead-path");
     if (arrowPath) arrowPath.setAttribute("fill", color); // 화살촉도 선과 항상 같은 색
   } else {
     visible.removeAttribute("marker-end");
+    visible.removeAttribute("marker-start");
   }
 
   const label = g.querySelector(".rel-line-label");

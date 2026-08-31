@@ -102,14 +102,24 @@ export class TreeModel {
   }
 
   getBounds() {
-    const pts = [...this.people.values(), ...this.textBoxes.values()];
-    if (!pts.length) return null;
+    if (!this.people.size && !this.textBoxes.size) return null;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of pts) {
+    for (const p of this.people.values()) {
       minX = Math.min(minX, p.x);
       maxX = Math.max(maxX, p.x);
       minY = Math.min(minY, p.y);
       maxY = Math.max(maxY, p.y);
+    }
+    // 텍스트 박스는 (x,y)가 중심이 아니라 왼쪽 위 모서리라, 점 하나로만 취급하면 상자의 나머지
+    // 부분(오른쪽/아래쪽으로 width/height만큼)이 통째로 빠진다 — "전체보기"/이미지 저장에서 박스가
+    // 잘려 보이던 원인. 오른쪽 아래 모서리(x+width, y+height)까지 반드시 포함시킨다.
+    for (const b of this.textBoxes.values()) {
+      const w = b.width ?? 200;
+      const h = b.height ?? 50;
+      minX = Math.min(minX, b.x);
+      maxX = Math.max(maxX, b.x + w);
+      minY = Math.min(minY, b.y);
+      maxY = Math.max(maxY, b.y + h);
     }
     return { minX, minY, maxX, maxY };
   }

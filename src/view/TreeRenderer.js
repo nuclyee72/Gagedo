@@ -223,15 +223,23 @@ export class TreeRenderer {
    * 델타만 적용한다. */
   _beginGroupDrag(anchorId, anchorType) {
     const positions = new Map(); // id -> { x, y, type }
+    const lockedEls = []; // 선택은 됐지만 잠겨 있어 이번 드래그에선 안 움직이는 것들의 DOM
     for (const id of this.multiSelected.people) {
       const p = this.tree.people.get(id);
-      if (p && !p.locked) positions.set(id, { x: p.x, y: p.y, type: "person" });
+      if (!p) continue;
+      if (p.locked) lockedEls.push(this.cardEls.get(id));
+      else positions.set(id, { x: p.x, y: p.y, type: "person" });
     }
     for (const id of this.multiSelected.textBoxes) {
       const b = this.tree.textBoxes.get(id);
-      if (b && !b.locked) positions.set(id, { x: b.x, y: b.y, type: "textbox" });
+      if (!b) continue;
+      if (b.locked) lockedEls.push(this.textBoxEls.get(id));
+      else positions.set(id, { x: b.x, y: b.y, type: "textbox" });
     }
-    this._groupDragState = { positions, dx: 0, dy: 0, anchorId, anchorType };
+    // 잠겨서 이번엔 안 움직이는 대상은 드래그가 진행되는 동안만 흐리게 + 자물쇠 표시를 띄워서
+    // "왜 이것만 안 따라오지?"를 바로 알 수 있게 한다 — 드래그가 끝나면 원래대로 되돌린다.
+    for (const el of lockedEls) el?.classList.add("drag-locked-preview");
+    this._groupDragState = { positions, dx: 0, dy: 0, anchorId, anchorType, lockedEls };
   }
 
   _updateGroupDrag(dxWorld, dyWorld) {
@@ -294,6 +302,8 @@ export class TreeRenderer {
     const g = this._groupDragState;
     if (!g) return;
     this._groupDragState = null;
+    // 드래그가 어떻게 끝나든(커밋/취소/삭제) 흐리게+자물쇠 미리보기는 항상 원래대로 되돌린다.
+    for (const el of g.lockedEls) el?.classList.remove("drag-locked-preview");
     if (droppedOnTrash) {
       if (!confirm(`선택한 ${g.positions.size}개를 삭제할까요? 인물이면 연결된 관계선도 함께 삭제됩니다.`)) {
         return;

@@ -358,9 +358,39 @@ html, body {
 
 /* border-color는 여기서 건드리지 않는다 — 사용자가 사진 테두리 색을 직접 골랐다면(PersonCard.js가
    인라인 style.borderColor로 지정) 선택 표시 때문에 그 색이 가려지면 안 되므로, 선택 여부는
-   글로우(box-shadow)만으로 나타낸다. */
-.person-card.selected .person-photo {
+   글로우(box-shadow)만으로 나타낸다.
+   .marquee-hover: 마키로 사각형을 그리는 도중(아직 드롭 전) 그 안에 걸린 카드를 실시간으로
+   미리 보여주는 상태 — 확정된 .selected와 같은 글로우를 그대로 재사용해서 "이대로 떼면
+   선택된다"는 걸 바로 알 수 있게 한다. */
+.person-card.selected .person-photo,
+.person-card.marquee-hover .person-photo {
   box-shadow: 0 2px 12px var(--accent-glow);
+}
+
+/* .drag-locked-preview: 마키로 걸렸거나(잠시 후 선택될) 이미 선택된 상태로 그룹을 끄는 중인데
+   이 인물은 잠겨 있어서 이번엔 같이 안 움직이는 경우 — "얘만 왜 안 따라오지?"를 헷갈리지 않게
+   사진을 흐리게 낮추고 자물쇠를 띄운다. 드래그가 끝나면(마키 확정/그룹 드래그 종료) 클래스가
+   빠지면서 원래 모습으로 돌아온다. */
+.person-card.drag-locked-preview .person-photo {
+  opacity: 0.4;
+  box-shadow: none;
+}
+
+.person-card.drag-locked-preview::after {
+  content: "🔒";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: var(--photo-size);
+  height: var(--photo-size);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  line-height: 1;
+  pointer-events: none;
+  text-shadow: 0 1px 4px var(--shadow);
 }
 
 .person-photo img {
@@ -458,9 +488,28 @@ html, body {
   border-color: var(--accent);
 }
 
-.text-box.selected .text-box-content {
+.text-box.selected .text-box-content,
+.text-box.marquee-hover .text-box-content {
   border-color: var(--accent);
   box-shadow: 0 2px 12px var(--accent-glow);
+}
+
+/* 사람 카드의 .drag-locked-preview와 같은 결 — 마키 미리보기 중이거나 그룹 드래그 중에 잠긴
+   텍스트 박스는 흐리게 + 자물쇠로 "이번엔 안 움직인다"를 보여준다. */
+.text-box.drag-locked-preview .text-box-content {
+  opacity: 0.4;
+}
+
+.text-box.drag-locked-preview::after {
+  content: "🔒";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  line-height: 1;
+  pointer-events: none;
 }
 
 /* 리사이즈 손잡이(모서리) — 선택(사이드바가 열려 있는 상태)했을 때만 보이고 그때만 조작 가능하다.
@@ -604,6 +653,10 @@ html, body {
      scrollbar-width/color는 Firefox, ::-webkit-scrollbar*는 Chrome/Safari/Edge용. */
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+  /* 스크롤바가 콘텐츠 박스 안쪽 폭을 갉아먹지 않게, 필요 없을 때도 그 자리를 미리 비워둔다 —
+     안 그러면 내용이 늘어나 스크롤이 막 생기는 순간 입력창/버튼들이 스크롤바 폭(수 px)만큼
+     옆으로 밀리면서 좁아져 보였다(글자 수가 늘어 태그가 줄바꿈되는 것과 겹치면 특히 눈에 띔). */
+  scrollbar-gutter: stable;
 }
 
 /* flex-direction:column인 #inspector 안에서, 자식들은 기본값(flex-shrink:1)이라 세로 공간이

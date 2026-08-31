@@ -174,6 +174,42 @@ function rectsIntersect(a, b) {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
+// 마키를 그리는 도중에도(드롭하기 전부터) 지금 박스 안에 걸린 대상들을 실시간으로 미리 보여준다 —
+// 잠기지 않은 건 선택 표시(테두리 glow)를, 잠긴 건 "어차피 이번엔 안 움직인다"는 걸 바로 알 수
+// 있게 흐리게+자물쇠로 다르게 보여준다. 실제 다중선택 확정(renderer.multiSelected)은 여전히
+// 마우스를 뗄 때(finalizeMarquee)만 일어나고, 이건 그 전까지의 순수 시각 미리보기일 뿐이라
+// 별도의 엘리먼트 목록으로 직접 추적해서 정리한다.
+let marqueeHoverEls = [];
+
+function updateMarqueeHoverPreview() {
+  const rect = marqueeBoxEl.getBoundingClientRect();
+  const nextEls = [];
+  for (const [id, el] of renderer.cardEls) {
+    if (!rectsIntersect(rect, el.getBoundingClientRect())) continue;
+    const locked = !!renderer.tree.people.get(id)?.locked;
+    el.classList.toggle("drag-locked-preview", locked);
+    el.classList.toggle("marquee-hover", !locked);
+    nextEls.push(el);
+  }
+  for (const [id, el] of renderer.textBoxEls) {
+    if (!rectsIntersect(rect, el.getBoundingClientRect())) continue;
+    const locked = !!renderer.tree.textBoxes.get(id)?.locked;
+    el.classList.toggle("drag-locked-preview", locked);
+    el.classList.toggle("marquee-hover", !locked);
+    nextEls.push(el);
+  }
+  const nextSet = new Set(nextEls);
+  for (const el of marqueeHoverEls) {
+    if (!nextSet.has(el)) el.classList.remove("marquee-hover", "drag-locked-preview");
+  }
+  marqueeHoverEls = nextEls;
+}
+
+function clearMarqueeHoverPreview() {
+  for (const el of marqueeHoverEls) el.classList.remove("marquee-hover", "drag-locked-preview");
+  marqueeHoverEls = [];
+}
+
 /** 마키 사각형과 겹치는 인물/텍스트박스를 모아 다중 선택으로 확정한다. 딱 하나만 걸리면 그냥
  * 평범한 단일 선택(사이드바 열기)으로 처리해서, "카드 하나만 작게 둘러싼" 경우를 클릭과
  * 비슷하게 느끼게 한다. */
@@ -181,6 +217,7 @@ function finalizeMarquee() {
   const rect = marqueeBoxEl.getBoundingClientRect();
   marqueeBoxEl.classList.remove("visible");
   marqueeState = null;
+  clearMarqueeHoverPreview();
 
   const peopleIds = [];
   for (const [id, el] of renderer.cardEls) {
@@ -249,6 +286,7 @@ const backgroundDrag = new DragController(viewportEl, {
   onDragMove: (dx, dy, e) => {
     if (marqueeState) {
       updateMarqueeBox(e.clientX, e.clientY);
+      updateMarqueeHoverPreview();
     } else {
       camera.pan(dx, dy);
     }

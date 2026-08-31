@@ -249,7 +249,10 @@ html, body {
 }
 
 /* 배경을 Shift+드래그하면 나타나는 사각형 선택 영역(마키/러버밴드) — JS가 화면 좌표 기준으로
-   위치/크기(left/top/width/height)를 실시간으로 계산해 인라인 스타일로 넣는다. */
+   위치/크기(left/top/width/height)를 실시간으로 계산해 인라인 스타일로 넣는다.
+   #viewport 안에서 #stage(카드/텍스트박스/관계선)보다 먼저 오는 형제로 둬서(index.html) 일부러
+   z-index를 주지 않는다 — 그래야 둘 다 "auto" 단계라 DOM 순서 그대로 쌓여서, 배경 위·카드
+   아래에 자연스럽게 낀다(드래그 중에도 인물 카드가 마키 사각형에 가려지지 않도록). */
 #marquee-box {
   position: fixed;
   display: none;
@@ -257,7 +260,6 @@ html, body {
   border: 1px solid var(--accent);
   opacity: 0.7;
   pointer-events: none;
-  z-index: 25;
 }
 
 #marquee-box.visible { display: block; }

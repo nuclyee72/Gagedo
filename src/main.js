@@ -257,8 +257,10 @@ function updateBulkToolbar() {
   bulkToolbarEl.querySelector(".bulk-toolbar-count").textContent = `${count}개 선택됨`;
   const allLocked = renderer.isSelectionFullyLocked();
   const lockBtn = bulkToolbarEl.querySelector('[data-action="bulk-lock"]');
-  lockBtn.textContent = allLocked ? "🔓" : "🔒";
-  lockBtn.title = allLocked ? "선택 잠금 풀기" : "선택 잠금";
+  // 아이콘은 "누르면 뭐가 될지"가 아니라 "지금 상태가 뭔지"를 보여준다 — 사이드바의 개별
+  // 잠금 버튼(.f-lock-btn, 잠기면 🔒/풀리면 🔓)과 같은 규칙으로 통일.
+  lockBtn.textContent = allLocked ? "🔒" : "🔓";
+  lockBtn.title = allLocked ? "전체 잠김 — 눌러서 풀기" : "선택 잠금";
   lockBtn.classList.toggle("active", allLocked);
 }
 

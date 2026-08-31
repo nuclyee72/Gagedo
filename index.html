@@ -30,6 +30,10 @@
     <header id="toolbar"></header>
 
     <main id="viewport">
+      <!-- 인물/텍스트박스(#stage 안)보다 뒤에 그려지도록 일부러 #stage보다 앞에 둔다 —
+           z-index:auto인 형제끼리는 DOM 순서로 쌓이므로, 여기 두면 드래그 중에도 카드/사진/
+           자물쇠 표시를 마키 사각형이 가리지 않는다. (배경 위·카드 아래) -->
+      <div id="marquee-box" aria-hidden="true"></div>
       <div id="stage">
         <svg id="lines-layer"></svg>
         <div id="world"></div>
@@ -43,8 +47,6 @@
     <aside id="inspector"></aside>
 
     <div id="trash-drop" aria-hidden="true">🗑️</div>
-
-    <div id="marquee-box" aria-hidden="true"></div>
 
     <div id="bulk-toolbar" class="bulk-toolbar" aria-hidden="true">
       <span class="bulk-toolbar-count"></span>

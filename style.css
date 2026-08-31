@@ -260,19 +260,40 @@ html, body {
   width: var(--photo-size);
   height: var(--photo-size);
   margin: 0 auto 8px;
-  border-radius: 50%;
+  /* 모양(원/네모/둥근 네모/마름모)은 여기서 고정하지 않고 .shape-*(아래, PersonCard.js가 붙여줌)가
+     결정한다 — 기본값은 JS 쪽에서 person.photoShape가 없으면 "circle"로 폴백. */
   overflow: hidden;
   background: var(--surface);
   /* border 대신 outline을 쓴다 — outline은 이 엘리먼트의 overflow:hidden에 안 잘리면서(사진을
-     원으로 자르는 용도는 그대로 유지), outline-offset을 굵기의 절반만큼 음수로 줘서 원래 경계선을
+     모양대로 자르는 용도는 그대로 유지), outline-offset을 굵기의 절반만큼 음수로 줘서 원래 경계선을
      중심으로 안쪽 절반·바깥쪽 절반이 대칭으로 걸치게 한다 — 두께가 늘어도 border-box처럼 사진
-     쪽으로만 파고들지 않고, 원 바깥쪽으로도 같이 커진다("안팎 모두 커짐"). 정확한 -offset 값은
+     쪽으로만 파고들지 않고, 바깥쪽으로도 같이 커진다("안팎 모두 커짐"). 정확한 -offset 값은
      굵기가 바뀔 때마다 PersonCard.js가 함께 다시 계산해서 넣는다.
-     (outline은 border-radius를 따라 둥글게 그려진다 — 최신 브라우저 기준.) */
+     (outline은 border-radius를 따라 그려진다 — 최신 브라우저 기준.) */
   outline: 3px solid var(--panel-bg);
   outline-offset: -1.5px;
   box-shadow: 0 2px 10px var(--shadow);
-  transition: outline-color 0.15s ease, box-shadow 0.15s ease;
+  transition: outline-color 0.15s ease, box-shadow 0.15s ease, border-radius 0.15s ease, transform 0.15s ease;
+}
+
+/* 사진 모양 4종 — 사이드바의 모양 미리보기 아이콘(.p-shape-preview)도 이 클래스들을 그대로
+   재사용한다(같은 시각 언어). 마름모는 정사각형을 45도 돌리는 방식이라, 돌아간 대각선이 원래
+   칸(--photo-size) 밖으로 넘치지 않도록 그만큼 줄여서(scale) 돌린다. */
+.shape-circle { border-radius: 50%; }
+.shape-square { border-radius: 6px; }
+.shape-rounded { border-radius: 22%; }
+.shape-diamond { border-radius: 6px; transform: rotate(45deg) scale(0.7); }
+
+/* 마름모는 틀(바깥 박스)만 돌리고, 그 안의 사진은 다시 반대로 돌려 원래 방향을 유지한다 —
+   돌리면서 줄인 만큼(scale) 다시 확대해서 빈 모서리 없이 꽉 채운다. */
+.person-photo.shape-diamond img {
+  transform: rotate(-45deg) scale(1.429);
+}
+
+/* 마름모는 회전된 모서리가 원래 --photo-size 칸보다 아주 살짝 더 아래로 튀어나올 수 있어(반올림
+   오차), 이름 텍스트와 겹치지 않도록 아래 여백을 조금 더 준다. */
+.person-photo.shape-diamond {
+  margin-bottom: calc(8px + var(--photo-size) * 0.08);
 }
 
 /* border-color는 여기서 건드리지 않는다 — 사용자가 사진 테두리 색을 직접 골랐다면(PersonCard.js가
@@ -661,18 +682,53 @@ html, body {
   font-weight: 600;
 }
 
+.p-shape-options {
+  display: flex;
+  gap: 8px;
+}
+
+/* #inspector button(ID 선택자)이 다시 덮어쓰지 않도록 #inspector로 한 번 더 묶는다 — 색상
+   스와치/굵기 슬라이더 때와 같은 종류의 우선순위 문제. */
+#inspector .p-shape-btn {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+#inspector .p-shape-btn:hover { border-color: var(--accent); }
+
+#inspector .p-shape-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.p-shape-preview {
+  display: block;
+  width: 20px;
+  height: 20px;
+  background: var(--muted);
+}
+
 /* 사진 등록: 원형 박스가 클릭(파일 선택)·드래그앤드롭·붙여넣기(Ctrl+V)를 담당하고, 그 바로
    아래 입력창이 URL을 담당한다 — 안내 문구 없이 박스 자체(제목 텍스트 대신 title 속성)로 안내. */
 .photo-drop {
   width: 180px;
   height: 180px;
   margin: 2px auto 0;
-  border-radius: 50%;
   overflow: hidden;
   border: 2px dashed var(--border);
   background: var(--surface);
   cursor: pointer;
   position: relative;
+  /* 모양은 .shape-*(사진 모양 선택기에 맞춰 InspectorPanel.js가 붙여줌)가 결정한다 — 실제 카드의
+     사진과 똑같은 모양으로 미리 보여줘서 업로드 전에도 어떻게 나올지 알 수 있게 한다. */
 }
 
 .photo-drop.dragover {
@@ -685,6 +741,10 @@ html, body {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.photo-drop.shape-diamond .photo-drop-preview {
+  transform: rotate(-45deg) scale(1.429);
 }
 
 .f-photo-url {

@@ -5,6 +5,14 @@ import { TYPE_DISPLAY_NAME, LINE_STYLE_PRESETS, COLOR_PRESETS, defaultColorFor }
 
 const DEFAULT_AVATAR = "assets/default-avatar.svg";
 
+/** 사진 모양 선택지 — shape 값은 PersonCard.js의 .shape-* 클래스, style.css의 실제 모양과 맞춘다. */
+const PHOTO_SHAPES = [
+  { shape: "circle", title: "원형" },
+  { shape: "square", title: "네모" },
+  { shape: "rounded", title: "모서리 둥근 네모" },
+  { shape: "diamond", title: "마름모" },
+];
+
 /** 선택한 인물/텍스트 박스/관계선의 내용을 편집하는 우측 패널. */
 export class InspectorPanel {
   constructor(el, { tree, store, onImageChange, getAllTags, cropModalEl }) {
@@ -62,6 +70,14 @@ export class InspectorPanel {
       <input type="text" class="f-photo-url" placeholder="이미지">
       <button type="button" class="f-photo-edit" hidden>이미지 수정</button>
       <input type="file" accept="image/*" class="f-photo-file" style="display:none">
+      <label>사진 모양</label>
+      <div class="p-shape-options">
+        ${PHOTO_SHAPES.map(({ shape, title }) => `
+          <button type="button" class="p-shape-btn" data-shape="${shape}" title="${title}">
+            <span class="p-shape-preview shape-${shape}"></span>
+          </button>
+        `).join("")}
+      </div>
       <label>테두리 색상</label>
       <div class="rel-color-swatches p-border-swatches">
         ${COLOR_PRESETS.map((c) => `<button type="button" class="rel-color-swatch" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("")}
@@ -95,6 +111,7 @@ export class InspectorPanel {
     });
 
     this._wirePhotoInput();
+    this._wirePhotoShapeInput();
     this._wireBorderInput();
 
     this.el.querySelector(".f-tag-input").addEventListener("keydown", (e) => {
@@ -174,6 +191,27 @@ export class InspectorPanel {
     });
 
     this.el.querySelector(".f-photo-edit").addEventListener("click", () => this._editExistingPhoto());
+  }
+
+  /** 사진 모양(원/네모/둥근 네모/마름모) 선택 — 카드의 사진뿐 아니라 사이드바 업로드 박스도 같은
+   * 모양으로 미리 보여준다. */
+  _wirePhotoShapeInput() {
+    for (const btn of this.el.querySelectorAll(".p-shape-btn")) {
+      btn.addEventListener("click", () => {
+        this._patch({ photoShape: btn.dataset.shape });
+        this._syncPhotoShapeControls();
+      });
+    }
+  }
+
+  _syncPhotoShapeControls() {
+    const shape = this.person?.photoShape || "circle";
+    for (const btn of this.el.querySelectorAll(".p-shape-btn")) {
+      btn.classList.toggle("active", btn.dataset.shape === shape);
+    }
+    const dropzone = this.el.querySelector(".photo-drop");
+    dropzone.classList.remove("shape-circle", "shape-square", "shape-rounded", "shape-diamond");
+    dropzone.classList.add(`shape-${shape}`);
   }
 
   /** 사진 원 테두리 색/굵기 — 관계선 색상 선택기와 같은 스와치+커스텀 색상+기본값 되돌리기 구성. */
@@ -347,6 +385,7 @@ export class InspectorPanel {
     this.el.querySelector(".f-notes").value = person.notes || "";
     this.el.querySelector(".f-photo-url").value = "";
     this._renderTags();
+    this._syncPhotoShapeControls();
     this._syncBorderControls(person);
     this._updateEditButtonVisibility();
     this.el.classList.add("open");

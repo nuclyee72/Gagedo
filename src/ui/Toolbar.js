@@ -9,9 +9,9 @@ export class Toolbar {
     this.el.innerHTML = `
       <div class="toolbar-group">
         <button type="button" data-action="add-person">+인물</button>
-        <div class="connect-dropdown">
+        <div class="toolbar-dropdown connect-dropdown">
           <button type="button" data-action="connect" class="toggle">&amp;관계</button>
-          <div class="connect-type-menu">
+          <div class="toolbar-dropdown-menu connect-type-menu">
             <button type="button" data-type="parent-child-solo">부모-자식(부모1)</button>
             <button type="button" data-type="parent-child">부모-자식(부모2)</button>
             <button type="button" data-type="spouse">배우자</button>
@@ -34,9 +34,15 @@ export class Toolbar {
         <button type="button" data-action="theme-toggle" title="다크 모드 전환" aria-label="다크 모드 전환">🌙</button>
       </div>
       <div class="toolbar-group">
-        <button type="button" data-action="export">내보내기</button>
-        <button type="button" data-action="export-image">이미지 저장</button>
-        <label class="file-btn">가져오기<input type="file" accept="application/json" data-action="import"></label>
+        <div class="toolbar-dropdown io-dropdown">
+          <button type="button" data-action="io-menu" title="내보내기/가져오기" aria-label="내보내기/가져오기">💾</button>
+          <div class="toolbar-dropdown-menu io-menu-list">
+            <button type="button" data-io="export-json">JSON으로 내보내기</button>
+            <button type="button" data-io="export-svg">SVG로 저장</button>
+            <button type="button" data-io="export-png">PNG로 저장</button>
+            <label class="file-btn">가져오기<input type="file" accept="application/json" data-action="import"></label>
+          </div>
+        </div>
       </div>
       <span class="save-indicator" data-role="save-indicator">저장됨</span>
     `;
@@ -63,9 +69,27 @@ export class Toolbar {
       this.handlers.pickConnectType && this.handlers.pickConnectType(btn.dataset.type);
     });
 
-    // 드롭다운 바깥을 클릭하면(유형을 안 고르고) 닫는다.
+    // 💾 버튼 자체는 토글만 담당(생성/가져오기 로직은 없음) — 데이터 액션 위임 리스너에는
+    // 대응하는 핸들러가 없어도(io-menu) 무해하니 별도 리스너로 직접 처리한다.
+    this.el.querySelector('[data-action="io-menu"]').addEventListener("click", () => this.toggleIoMenu());
+
+    // 내보내기 형식 3개(JSON/SVG/PNG) 버튼 — data-io만 갖고 data-action은 없어서 위 위임과 안 겹친다.
+    this.el.querySelector(".io-menu-list").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-io]");
+      if (!btn) return;
+      this.closeIoMenu();
+      const handler = this.handlers[toCamel(btn.dataset.io)];
+      handler && handler();
+    });
+
+    // "가져오기" 라벨을 누르는 순간(실제 파일 선택 전이라도) 메뉴부터 닫는다 — 파일 선택창은
+    // OS 모달이라 그 뒤에 드롭다운이 계속 열려 보이면 어색하다.
+    this.el.querySelector(".io-menu-list .file-btn").addEventListener("click", () => this.closeIoMenu());
+
+    // 드롭다운 바깥을 클릭하면(고르지 않고) 각각 닫는다.
     document.addEventListener("click", (e) => {
       if (!e.target.closest(".connect-dropdown")) this.closeTypeMenu();
+      if (!e.target.closest(".io-dropdown")) this.closeIoMenu();
     });
   }
 
@@ -79,6 +103,14 @@ export class Toolbar {
 
   toggleTypeMenu() {
     this.el.querySelector(".connect-dropdown").classList.toggle("open");
+  }
+
+  closeIoMenu() {
+    this.el.querySelector(".io-dropdown").classList.remove("open");
+  }
+
+  toggleIoMenu() {
+    this.el.querySelector(".io-dropdown").classList.toggle("open");
   }
 
   /** typeLabel: 연결 모드가 켜져 있는 동안 미리 골라둔 관계 유형 이름(버튼에 표시용). */

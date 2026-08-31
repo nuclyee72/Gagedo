@@ -6,7 +6,7 @@ import { DragController } from "./view/DragController.js";
 import { TreeRenderer } from "./view/TreeRenderer.js";
 import { Toolbar } from "./ui/Toolbar.js";
 import { InspectorPanel } from "./ui/InspectorPanel.js";
-import { downloadTreeSVG } from "./utils/svgExport.js";
+import { downloadTreeSVG, downloadTreePNG } from "./utils/svgExport.js";
 
 const viewportEl = document.getElementById("viewport");
 const stageEl = document.getElementById("stage");
@@ -113,8 +113,9 @@ const toolbar = new Toolbar(toolbarEl, {
   fit: () => camera.fitToContent(tree.getBounds()),
   undo: () => undoMgr.performUndo(),
   redo: () => undoMgr.performRedo(),
-  export: doExport,
-  exportImage: doExportImage,
+  exportJson: doExport,
+  exportSvg: doExportSvgImage,
+  exportPng: doExportPngImage,
   import: doImport,
   themeToggle: () => {
     const isDark = document.documentElement.getAttribute("data-theme") === "dark";
@@ -266,8 +267,14 @@ async function doExport() {
 }
 
 /** SVG(벡터)로 내보낸다 — 아무리 확대해도 선/글자가 안 깨진다(사진만 원본 해상도 그대로인 래스터). */
-async function doExportImage() {
+async function doExportSvgImage() {
   const ok = await downloadTreeSVG({ tree, renderer, store }, `family-tree-${new Date().toISOString().slice(0, 10)}.svg`);
+  if (!ok) alert("내보낼 내용이 없습니다. 인물을 먼저 추가해주세요.");
+}
+
+/** PNG(래스터)로 내보낸다 — SVG를 못 받는 곳(일부 메신저 미리보기 등)에 공유하기 좋게. */
+async function doExportPngImage() {
+  const ok = await downloadTreePNG({ tree, renderer, store }, `family-tree-${new Date().toISOString().slice(0, 10)}.png`);
   if (!ok) alert("내보낼 내용이 없습니다. 인물을 먼저 추가해주세요.");
 }
 

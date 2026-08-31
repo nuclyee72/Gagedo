@@ -734,14 +734,17 @@ html, body {
 
 .modal-box h3 { margin: 0 0 8px; font-size: 15px; }
 
-/* ---------- 관계 유형 드롭다운("&관계" 버튼 바로 아래) ---------- */
-
-.connect-dropdown {
+/* ---------- 툴바 드롭다운 공용(버튼 바로 아래 세로 메뉴) ----------
+   "&관계"의 유형 선택과 내보내기/가져오기 메뉴가 똑같은 생김새를 쓴다 —
+   .toolbar-dropdown(버튼을 감싸는 위치 기준점)/.toolbar-dropdown-menu(실제 메뉴)가
+   공용 스타일이고, .connect-dropdown/.io-dropdown 같은 개별 클래스는 열림 상태
+   토글과 JS에서 서로 구분해 targeting하는 용도로만 덧붙인다. */
+.toolbar-dropdown {
   position: relative;
   display: inline-flex;
 }
 
-.connect-type-menu {
+.toolbar-dropdown-menu {
   display: none;
   flex-direction: column;
   position: absolute;
@@ -757,11 +760,21 @@ html, body {
   z-index: 45;
 }
 
-.connect-dropdown.open .connect-type-menu { display: flex; }
+.toolbar-dropdown.open .toolbar-dropdown-menu { display: flex; }
+
+/* io-dropdown(💾)은 툴바 오른쪽 끝에 있어서, 다른 드롭다운처럼 왼쪽 정렬(left:0)로 열면 메뉴가
+   화면 오른쪽 밖으로 잘려 나간다 — 이 하나만 버튼 오른쪽 끝에 맞춰(right:0) 왼쪽으로 펼친다. */
+.io-dropdown .toolbar-dropdown-menu {
+  left: auto;
+  right: 0;
+}
 
 /* #toolbar button(ID 선택자라 우선순위가 높다)이 배경/패딩을 다시 덮어쓰지 않도록 #toolbar로
-   한 번 더 묶는다 — 사이드바 색상 스와치 때와 같은 종류의 우선순위 문제. */
-#toolbar .connect-type-menu button {
+   한 번 더 묶는다 — 사이드바 색상 스와치 때와 같은 종류의 우선순위 문제.
+   .file-btn("가져오기")도 메뉴 안에서는 다른 항목과 같은 생김새(테두리 없는 플랫 리스트)로
+   맞춘다 — 원래 툴바에서 쓰던 알약 모양 버튼 스타일과 다르다. */
+#toolbar .toolbar-dropdown-menu button,
+#toolbar .toolbar-dropdown-menu .file-btn {
   border: none;
   background: none;
   color: var(--text);
@@ -771,9 +784,12 @@ html, body {
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
+  display: block;
+  width: 100%;
 }
 
-#toolbar .connect-type-menu button:hover { background: var(--accent-soft); color: var(--accent); }
+#toolbar .toolbar-dropdown-menu button:hover,
+#toolbar .toolbar-dropdown-menu .file-btn:hover { background: var(--accent-soft); color: var(--accent); }
 
 /* ---------- 사진 위치/크기 조정(크롭) 모달 ---------- */
 

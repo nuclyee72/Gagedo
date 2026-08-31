@@ -164,3 +164,57 @@ export async function downloadTreeSVG({ tree, renderer, store }, filename) {
   URL.revokeObjectURL(url);
   return true;
 }
+
+// PNG는 래스터라 무한히 확대해도 안 깨지진 않지만(SVG와 달리), 카카오톡 등 일부 메신저·뷰어가
+// SVG 미리보기를 잘 못 띄우는 경우를 위한 대안이다 — 그래서 화면 그대로의 해상도가 아니라
+// PNG_SCALE배로 키워서 그려, 일반적인 보기/확대 정도에선 흐릿해 보이지 않게 한다.
+const PNG_SCALE = 2;
+const PNG_MAX_DIMENSION = 8000; // 캔버스 크기 한도(브라우저별 최대 캔버스 크기를 넘지 않도록)
+
+/** buildTreeSVG로 만든 벡터 SVG를 캔버스에 그려 PNG Blob으로 래스터화한다. */
+export async function buildTreePNGBlob({ tree, renderer, store }) {
+  const svg = await buildTreeSVG({ tree, renderer, store });
+  if (!svg) return null;
+
+  const width = parseFloat(svg.getAttribute("width"));
+  const height = parseFloat(svg.getAttribute("height"));
+  let scale = PNG_SCALE;
+  if (width * scale > PNG_MAX_DIMENSION || height * scale > PNG_MAX_DIMENSION) {
+    scale = Math.min(PNG_MAX_DIMENSION / width, PNG_MAX_DIMENSION / height);
+  }
+
+  const xml = new XMLSerializer().serializeToString(svg);
+  // blob: URL로 <img>에 물리면, foreignObject(카드/텍스트박스에 실제 HTML을 담는 부분)가 있는
+  // SVG는 캔버스가 "오염(tainted)"돼서 toBlob/toDataURL이 SecurityError로 막힌다(실제로 겪음,
+  // 크로스 오리진 리소스가 하나도 없는 순수 로컬 SVG여도 마찬가지 — 브라우저가 foreignObject
+  // 자체를 보수적으로 취급하는 것). base64 data: URI로 주면 캔버스가 오염되지 않는다 — 같은
+  // 문서 안에서 만든 데이터라는 게 명확해서인 듯하다.
+  const dataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(xml)))}`;
+  const img = await new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("SVG를 이미지로 불러오지 못했습니다."));
+    image.src = dataUrl;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return await new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("PNG 변환에 실패했습니다."))), "image/png");
+  });
+}
+
+/** buildTreePNGBlob의 결과를 실제로 다운로드한다. */
+export async function downloadTreePNG({ tree, renderer, store }, filename) {
+  const blob = await buildTreePNGBlob({ tree, renderer, store });
+  if (!blob) return false;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  return true;
+}

@@ -21,6 +21,13 @@ export function applyCardData(el, person, photoUrl) {
   el.querySelector(".person-name").textContent = person.name || "이름 없음";
   el.querySelector(".person-photo img").src = photoUrl || DEFAULT_AVATAR;
 
+  // 테두리 색/굵기 커스텀 — 개별 longhand로만 지정해서(shorthand border 전체가 아니라) CSS의
+  // border-style은 그대로 solid를 따르고, 값이 없으면(null) 빈 문자열로 인라인 스타일을 지워
+  // style.css의 기본값(테마 색 3px)으로 자연스럽게 되돌아가게 한다.
+  const photo = el.querySelector(".person-photo");
+  photo.style.borderColor = person.borderColor || "";
+  photo.style.borderWidth = person.borderWidth ? `${person.borderWidth}px` : "";
+
   const tagsEl = el.querySelector(".person-tags");
   tagsEl.innerHTML = "";
   for (const tag of person.tags || []) {

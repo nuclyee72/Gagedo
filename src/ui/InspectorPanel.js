@@ -62,6 +62,17 @@ export class InspectorPanel {
       <input type="text" class="f-photo-url" placeholder="이미지">
       <button type="button" class="f-photo-edit" hidden>이미지 수정</button>
       <input type="file" accept="image/*" class="f-photo-file" style="display:none">
+      <label>테두리 색상</label>
+      <div class="rel-color-swatches p-border-swatches">
+        ${COLOR_PRESETS.map((c) => `<button type="button" class="rel-color-swatch" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("")}
+      </div>
+      <div class="rel-color-custom-row">
+        <input type="color" class="p-border-color rel-color-input" title="직접 고르기">
+        <button type="button" class="p-border-reset rel-color-reset">기본값</button>
+      </div>
+      <label>테두리 굵기 <span class="p-border-width-value"></span>
+        <input type="range" class="p-border-width" min="0" max="10" step="1">
+      </label>
       <label>속성(태그)
         <input type="text" class="f-tag-input" placeholder="태그 입력 후 Enter" list="tag-suggestions">
         <datalist id="tag-suggestions"></datalist>
@@ -84,6 +95,7 @@ export class InspectorPanel {
     });
 
     this._wirePhotoInput();
+    this._wireBorderInput();
 
     this.el.querySelector(".f-tag-input").addEventListener("keydown", (e) => {
       if (e.key !== "Enter" || !e.target.value.trim() || !this.person) return;
@@ -162,6 +174,46 @@ export class InspectorPanel {
     });
 
     this.el.querySelector(".f-photo-edit").addEventListener("click", () => this._editExistingPhoto());
+  }
+
+  /** 사진 원 테두리 색/굵기 — 관계선 색상 선택기와 같은 스와치+커스텀 색상+기본값 되돌리기 구성. */
+  _wireBorderInput() {
+    // 스와치 활성 표시/색상 입력값처럼 "파생된" UI 상태는 _patch만으로는 안 바뀌므로(이름/메모와
+    // 달리 입력창이 곧 값 자체가 아님) 값을 바꿀 때마다 직접 다시 동기화해준다.
+    for (const sw of this.el.querySelectorAll(".p-border-swatches .rel-color-swatch")) {
+      sw.addEventListener("click", () => {
+        this._patch({ borderColor: sw.dataset.color });
+        this._syncBorderControls(this.person);
+      });
+    }
+    this.el.querySelector(".p-border-color").addEventListener("input", (e) => {
+      this._patch({ borderColor: e.target.value });
+      this._syncBorderControls(this.person);
+    });
+    this.el.querySelector(".p-border-reset").addEventListener("click", () => {
+      this._patch({ borderColor: null });
+      this._syncBorderControls(this.person);
+    });
+    this.el.querySelector(".p-border-width").addEventListener("input", (e) => {
+      this._patch({ borderWidth: parseInt(e.target.value, 10) });
+      this.el.querySelector(".p-border-width-value").textContent = `${e.target.value}px`;
+    });
+  }
+
+  /** 테두리 스와치의 "선택됨" 표시 + 색상/굵기 입력값을 person에 맞춰 갱신한다. */
+  _syncBorderControls(person) {
+    const DEFAULT_WIDTH = 3; // style.css의 .person-photo 기본 굵기(3px)와 맞춘 값
+    const colorInput = this.el.querySelector(".p-border-color");
+    // 기본값(null)일 땐 실제 테마 변수(--panel-bg)의 현재 값을 보여준다(다크/라이트에 따라 다름).
+    // CSS 커스텀 프로퍼티는 계산되지 않고 style.css에 적힌 hex 문자열 그대로 돌아온다.
+    const themeDefault = getComputedStyle(document.documentElement).getPropertyValue("--panel-bg").trim();
+    colorInput.value = person.borderColor || themeDefault || "#ffffff";
+    for (const sw of this.el.querySelectorAll(".p-border-swatches .rel-color-swatch")) {
+      sw.classList.toggle("active", !!person.borderColor && sw.dataset.color === person.borderColor);
+    }
+    const width = person.borderWidth ?? DEFAULT_WIDTH;
+    this.el.querySelector(".p-border-width").value = width;
+    this.el.querySelector(".p-border-width-value").textContent = `${width}px`;
   }
 
   async _applyUrlInput() {
@@ -295,6 +347,7 @@ export class InspectorPanel {
     this.el.querySelector(".f-notes").value = person.notes || "";
     this.el.querySelector(".f-photo-url").value = "";
     this._renderTags();
+    this._syncBorderControls(person);
     this._updateEditButtonVisibility();
     this.el.classList.add("open");
 

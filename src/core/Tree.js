@@ -23,7 +23,10 @@ export class TreeModel {
   }
 
   addPerson({ x = 0, y = 0, name = "이름 없음" } = {}) {
-    const person = { id: uuid(), name, photoId: null, photoUrl: null, tags: [], x, y, notes: "" };
+    const person = {
+      id: uuid(), name, photoId: null, photoUrl: null, tags: [], x, y, notes: "",
+      borderColor: null, borderWidth: null, // 사진 테두리 커스텀(색/굵기) — null이면 기본값(테마 색/3px) 사용
+    };
     this.people.set(person.id, person);
     this._emit("person:add", person);
     return person;
@@ -39,7 +42,11 @@ export class TreeModel {
   removePerson(id) {
     if (!this.people.delete(id)) return;
     for (const [relId, rel] of this.relationships) {
-      if (rel.fromId === id || rel.toId === id) this.relationships.delete(relId);
+      // "부모-자식(부모2)"는 rel.fromId(부모1)/rel.toId(자식) 뿐 아니라 rel.viaSpouseId(부모2)도
+      // 참조한다 — 부모2(배우자) 쪽이 지워지면 그 관계선은 더 이상 "이 부부의 자식"이라는 의미가
+      // 없어지므로(부부 관계선 자체도 이 조건 없이 fromId/toId로 이미 같이 지워짐), 자식과의
+      // 연결선도 함께 지운다. 자식 인물이나 부모1은 그대로 남는다 — 지워지는 건 이 관계선뿐이다.
+      if (rel.fromId === id || rel.toId === id || rel.viaSpouseId === id) this.relationships.delete(relId);
     }
     this._emit("person:remove", id);
   }

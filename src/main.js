@@ -360,6 +360,122 @@ function handleTextBoxClick(id) {
   inspector.openTextBox(box);
 }
 
+// ---------- Ctrl+C/Ctrl+V 복사·붙여넣기(인물/텍스트박스) ----------
+// clipboard: 마지막으로 복사한 내용의 스냅샷(id는 안 담음, 붙여넣을 때마다 새 id로 다시 만든다).
+// pasteCount: 같은 복사 내용을 여러 번 붙여넣을 때마다 조금씩 더 벌어지게(겹쳐 보이지 않게) 세는 값 —
+// 새로 복사할 때마다 0으로 되돌린다.
+let clipboard = null;
+let pasteCount = 0;
+const PASTE_OFFSET = 40; // 붙여넣을 때마다 원본에서 이만큼(월드 좌표) 대각선으로 띄운다.
+
+/** 지금 선택된 것(마키 다중선택 2개 이상, 또는 사이드바에 열려 있는 인물/텍스트박스 하나)을
+ * 복사한다. 다중선택이면 그 안에서 서로 이어진 관계선(양쪽 다 선택 범위 안에 있는 것)도 같이
+ * 담아서, 붙여넣을 때 내부 연결까지 그대로 살아있게 한다. */
+function copySelectionToClipboard() {
+  if (connectMode) return; // 연결 모드 중엔(고르는 중인 대상과 헷갈리지 않게) 복사하지 않는다.
+  let peopleIds = [];
+  let textBoxIds = [];
+  if (renderer.getMultiSelectionCount() >= 2) {
+    peopleIds = [...renderer.multiSelected.people];
+    textBoxIds = [...renderer.multiSelected.textBoxes];
+  } else if (inspector.mode === "person" && inspector.person) {
+    peopleIds = [inspector.person.id];
+  } else if (inspector.mode === "textbox" && inspector.textBox) {
+    textBoxIds = [inspector.textBox.id];
+  } else {
+    return; // 관계선 사이드바가 열려 있거나 아무것도 선택 안 된 상태 — 복사할 대상이 없다.
+  }
+
+  const peopleIdSet = new Set(peopleIds);
+  const relationships = [];
+  for (const rel of tree.relationships.values()) {
+    if (
+      peopleIdSet.has(rel.fromId) &&
+      peopleIdSet.has(rel.toId) &&
+      (!rel.viaSpouseId || peopleIdSet.has(rel.viaSpouseId))
+    ) {
+      relationships.push({ ...rel });
+    }
+  }
+
+  clipboard = {
+    people: peopleIds.map((id) => ({ ...tree.people.get(id) })),
+    textBoxes: textBoxIds.map((id) => ({ ...tree.textBoxes.get(id) })),
+    relationships,
+  };
+  pasteCount = 0;
+}
+
+/** clipboard에 담긴 내용을 전부 새 id로 다시 만들어 붙여넣고, 방금 만든 것들을 곧바로
+ * 선택 상태로 만든다(붙이자마자 바로 옮길 수 있게). */
+function pasteClipboard() {
+  if (!clipboard || (!clipboard.people.length && !clipboard.textBoxes.length)) return;
+  pasteCount += 1;
+  const dx = PASTE_OFFSET * pasteCount;
+  const dy = PASTE_OFFSET * pasteCount;
+
+  const idMap = new Map(); // 원본 인물 id -> 새로 만든 인물 id (관계 복원에 필요)
+  const newPeopleIds = [];
+  for (const p of clipboard.people) {
+    const created = tree.addPerson({
+      x: p.x + dx,
+      y: p.y + dy,
+      name: p.name,
+      photoId: p.photoId,
+      photoUrl: p.photoUrl,
+      tags: p.tags,
+      notes: p.notes,
+      borderColor: p.borderColor,
+      borderWidth: p.borderWidth,
+      photoShape: p.photoShape,
+      locked: false, // 복사본은 항상 잠금 풀린 상태로 시작 — 붙이자마자 바로 옮길 수 있게.
+    });
+    idMap.set(p.id, created.id);
+    newPeopleIds.push(created.id);
+  }
+
+  const newTextBoxIds = [];
+  for (const b of clipboard.textBoxes) {
+    const created = tree.addTextBox({ x: b.x + dx, y: b.y + dy, text: b.text, fontSize: b.fontSize, width: b.width, height: b.height });
+    newTextBoxIds.push(created.id);
+  }
+
+  for (const rel of clipboard.relationships) {
+    const created = tree.addRelationship({
+      fromId: idMap.get(rel.fromId),
+      toId: idMap.get(rel.toId),
+      type: rel.type,
+      label: rel.label,
+      viaSpouseId: rel.viaSpouseId ? idMap.get(rel.viaSpouseId) : null,
+    });
+    // addRelationship은 color/lineStyle을 받지 않으므로(기본 생성 후 따로 채워야 하는 필드),
+    // 원본에 커스텀 값이 있었으면 여기서 마저 옮겨준다.
+    if (created && (rel.color || rel.lineStyle)) {
+      tree.updateRelationship(created.id, { color: rel.color, lineStyle: rel.lineStyle });
+    }
+  }
+
+  // 방금 붙여넣은 것들을 곧바로 선택 상태로 — 여러 개면 다중선택(벌크 툴바), 하나면 그 사이드바를 연다.
+  renderer.setSelected(null);
+  renderer.setSelectedTextBox(null);
+  renderer.setSelectedLine(null);
+  const total = newPeopleIds.length + newTextBoxIds.length;
+  if (total >= 2) {
+    renderer.clearMultiSelection();
+    inspector.close();
+    renderer.setMultiSelection({ people: newPeopleIds, textBoxes: newTextBoxIds });
+    updateBulkToolbar();
+  } else if (newPeopleIds.length === 1) {
+    renderer.clearMultiSelection();
+    hideBulkToolbar();
+    handleCardClick(newPeopleIds[0]);
+  } else if (newTextBoxIds.length === 1) {
+    renderer.clearMultiSelection();
+    hideBulkToolbar();
+    handleTextBoxClick(newTextBoxIds[0]);
+  }
+}
+
 /** 유형별로 고른 인물 순서를 실제 관계(들)로 바꾼다. */
 function finalizeConnection(type, picks) {
   if (type === "parent-child") {
@@ -494,6 +610,14 @@ document.addEventListener("keydown", (e) => {
   } else if ((e.ctrlKey || e.metaKey) && (key === "y" || (key === "z" && e.shiftKey))) {
     e.preventDefault();
     undoMgr.performRedo();
+  } else if ((e.ctrlKey || e.metaKey) && key === "c") {
+    // 텍스트를 따로 드래그해 선택해둔 게 아니라면(브라우저 기본 텍스트 복사와 안 겹치게) 인물/
+    // 텍스트박스 복사로 취급한다.
+    if (window.getSelection()?.toString()) return;
+    copySelectionToClipboard();
+  } else if ((e.ctrlKey || e.metaKey) && key === "v") {
+    e.preventDefault();
+    pasteClipboard();
   }
 });
 

@@ -546,6 +546,15 @@ html, body {
   scrollbar-color: var(--border) transparent;
 }
 
+/* flex-direction:column인 #inspector 안에서, 자식들은 기본값(flex-shrink:1)이라 세로 공간이
+   모자라면 스크롤되는 대신 찌그러진다 — 특히 .photo-drop(180×180 고정 크기 사진 박스)이 화면이
+   좁으면 몇 px짜리 납작한 줄로 눌려버렸다(실제로 재현: 짧은 화면에서 높이가 180px→4px로 줄어듦).
+   모든 직계 자식의 flex-shrink를 0으로 고정해서, 공간이 모자라면 위 overflow-y:auto가 스크롤로
+   처리하게 한다(찌그러지지 않고 원래 크기 그대로 유지). */
+#inspector > * {
+  flex-shrink: 0;
+}
+
 #inspector::-webkit-scrollbar { width: 8px; }
 #inspector::-webkit-scrollbar-track { background: transparent; }
 #inspector::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }

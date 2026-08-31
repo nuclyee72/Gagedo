@@ -260,7 +260,7 @@ html, body {
   width: var(--photo-size);
   height: var(--photo-size);
   margin: 0 auto 8px;
-  /* 모양(원/네모/둥근 네모/마름모)은 여기서 고정하지 않고 .shape-*(아래, PersonCard.js가 붙여줌)가
+  /* 모양(원/네모/둥근 네모)은 여기서 고정하지 않고 .shape-*(아래, PersonCard.js가 붙여줌)가
      결정한다 — 기본값은 JS 쪽에서 person.photoShape가 없으면 "circle"로 폴백. */
   overflow: hidden;
   background: var(--surface);
@@ -276,25 +276,11 @@ html, body {
   transition: outline-color 0.15s ease, box-shadow 0.15s ease, border-radius 0.15s ease, transform 0.15s ease;
 }
 
-/* 사진 모양 4종 — 사이드바의 모양 미리보기 아이콘(.p-shape-preview)도 이 클래스들을 그대로
-   재사용한다(같은 시각 언어). 마름모는 정사각형을 45도 돌리는 방식이라, 돌아간 대각선이 원래
-   칸(--photo-size) 밖으로 넘치지 않도록 그만큼 줄여서(scale) 돌린다. */
+/* 사진 모양 3종 — 사이드바의 모양 미리보기 아이콘(.p-shape-preview)도 이 클래스들을 그대로
+   재사용한다(같은 시각 언어). */
 .shape-circle { border-radius: 50%; }
 .shape-square { border-radius: 6px; }
 .shape-rounded { border-radius: 22%; }
-.shape-diamond { border-radius: 6px; transform: rotate(45deg) scale(0.7); }
-
-/* 마름모는 틀(바깥 박스)만 돌리고, 그 안의 사진은 다시 반대로 돌려 원래 방향을 유지한다 —
-   돌리면서 줄인 만큼(scale) 다시 확대해서 빈 모서리 없이 꽉 채운다. */
-.person-photo.shape-diamond img {
-  transform: rotate(-45deg) scale(1.429);
-}
-
-/* 마름모는 회전된 모서리가 원래 --photo-size 칸보다 아주 살짝 더 아래로 튀어나올 수 있어(반올림
-   오차), 이름 텍스트와 겹치지 않도록 아래 여백을 조금 더 준다. */
-.person-photo.shape-diamond {
-  margin-bottom: calc(8px + var(--photo-size) * 0.08);
-}
 
 /* border-color는 여기서 건드리지 않는다 — 사용자가 사진 테두리 색을 직접 골랐다면(PersonCard.js가
    인라인 style.borderColor로 지정) 선택 표시 때문에 그 색이 가려지면 안 되므로, 선택 여부는
@@ -750,10 +736,6 @@ html, body {
   height: 100%;
   object-fit: cover;
   display: block;
-}
-
-.photo-drop.shape-diamond .photo-drop-preview {
-  transform: rotate(-45deg) scale(1.429);
 }
 
 .f-photo-url {

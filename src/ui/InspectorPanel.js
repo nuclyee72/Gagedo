@@ -10,7 +10,6 @@ const PHOTO_SHAPES = [
   { shape: "circle", title: "원형" },
   { shape: "square", title: "네모" },
   { shape: "rounded", title: "모서리 둥근 네모" },
-  { shape: "diamond", title: "마름모" },
 ];
 
 /** 선택한 인물/텍스트 박스/관계선의 내용을 편집하는 우측 패널. */
@@ -193,7 +192,7 @@ export class InspectorPanel {
     this.el.querySelector(".f-photo-edit").addEventListener("click", () => this._editExistingPhoto());
   }
 
-  /** 사진 모양(원/네모/둥근 네모/마름모) 선택 — 카드의 사진뿐 아니라 사이드바 업로드 박스도 같은
+  /** 사진 모양(원/네모/둥근 네모) 선택 — 카드의 사진뿐 아니라 사이드바 업로드 박스도 같은
    * 모양으로 미리 보여준다. */
   _wirePhotoShapeInput() {
     for (const btn of this.el.querySelectorAll(".p-shape-btn")) {

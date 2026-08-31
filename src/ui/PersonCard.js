@@ -37,8 +37,10 @@ export function applyCardData(el, person, photoUrl) {
     photo.style.outlineOffset = "";
   }
 
-  // 사진 모양(원/네모/둥근 네모/마름모) — .shape-*는 style.css에 정의되어 있고, 사이드바의 모양
-  // 미리보기 아이콘(.p-shape-preview)도 같은 클래스를 재사용한다.
+  // 사진 모양(원/네모/둥근 네모) — .shape-*는 style.css에 정의되어 있고, 사이드바의 모양 미리보기
+  // 아이콘(.p-shape-preview)도 같은 클래스를 재사용한다. shape-diamond는 더 이상 선택지가 아니지만
+  // (스타일도 삭제됨) 예전에 그 모양으로 저장된 데이터를 불러왔을 때 남은 클래스를 정리하기 위해
+  // remove 목록엔 그대로 둔다.
   photo.classList.remove("shape-circle", "shape-square", "shape-rounded", "shape-diamond");
   photo.classList.add(`shape-${person.photoShape || "circle"}`);
 

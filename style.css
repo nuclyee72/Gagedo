@@ -1200,6 +1200,21 @@ html, body {
   #inspector.open {
     transform: translateY(0);
   }
+
+  /* 화면 크기 관련 버튼(축소/100%/확대/전체보기)은 모바일에선 감춘다 — 핀치 줌/팬으로 이미
+     다 되는 조작이라 좁은 화면에서 굳이 자리를 차지할 필요가 없다. */
+  .toolbar-zoom-group {
+    display: none;
+  }
+
+  /* "&관계"/"💾" 드롭다운 메뉴 — #toolbar가 가로 스크롤(overflow-x:auto)이라 CSS 규칙상
+     overflow-y도 강제로 auto가 되어(브라우저가 자동으로 맞춤), 기존처럼 position:absolute로
+     버튼 아래에 두면 툴바 바깥으로 튀어나온 부분이 그대로 잘려 안 보였다. fixed로 바꾸면
+     조상의 overflow 클리핑을 안 받으므로, 실제 화면 좌표(top/left)는 Toolbar.js의
+     _positionMobileMenu가 열릴 때마다 버튼 위치를 재서 인라인으로 넣어준다. */
+  .toolbar-dropdown-menu {
+    position: fixed;
+  }
 }
 
 /* 아주 좁은 화면(iPhone SE 등 320px대)에서는 사진 크롭 모달의 정사각형 캔버스(280px)가
@@ -1233,5 +1248,26 @@ html, body {
     height: 24px;
     right: -10px;
     bottom: -10px;
+  }
+}
+
+/* 모바일 툴바를 더 작게 — 반드시 위 @media(pointer:coarse) 블록보다 뒤에 와야 한다. 두 미디어
+   쿼리 다 셀렉터 특정성이 같으므로(#toolbar button 등), 실제 폰(좁은 화면 + 터치)에서는 둘 다
+   조건이 맞아 나중에 나오는 이 규칙이 이겨야 위 coarse 블록의 확대(padding:10px 14px 등)를
+   다시 줄일 수 있다 — 소스 순서만으로 우선순위를 낸다(이 파일 다른 곳(#inspector 92vw 등)에서도
+   이미 쓰던 패턴). */
+@media (max-width: 640px) {
+  #toolbar {
+    gap: 8px;
+    padding: 6px 10px;
+    padding-top: calc(6px + env(safe-area-inset-top, 0px));
+    padding-left: calc(10px + env(safe-area-inset-left, 0px));
+    padding-right: calc(10px + env(safe-area-inset-right, 0px));
+  }
+
+  #toolbar button,
+  .file-btn {
+    padding: 6px 9px;
+    font-size: 12px;
   }
 }

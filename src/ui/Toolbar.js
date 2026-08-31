@@ -21,7 +21,7 @@ export class Toolbar {
         </div>
         <button type="button" data-action="add-textbox">텍스트</button>
       </div>
-      <div class="toolbar-group">
+      <div class="toolbar-group toolbar-zoom-group">
         <button type="button" data-action="zoom-out" aria-label="축소">－</button>
         <button type="button" data-action="zoom-reset">100%</button>
         <button type="button" data-action="zoom-in" aria-label="확대">＋</button>
@@ -95,7 +95,9 @@ export class Toolbar {
   }
 
   openTypeMenu() {
-    this.el.querySelector(".connect-dropdown").classList.add("open");
+    const dropdown = this.el.querySelector(".connect-dropdown");
+    dropdown.classList.add("open");
+    this._positionMobileMenu(dropdown);
   }
 
   closeTypeMenu() {
@@ -103,7 +105,9 @@ export class Toolbar {
   }
 
   toggleTypeMenu() {
-    this.el.querySelector(".connect-dropdown").classList.toggle("open");
+    const dropdown = this.el.querySelector(".connect-dropdown");
+    dropdown.classList.toggle("open");
+    if (dropdown.classList.contains("open")) this._positionMobileMenu(dropdown);
   }
 
   closeIoMenu() {
@@ -111,7 +115,38 @@ export class Toolbar {
   }
 
   toggleIoMenu() {
-    this.el.querySelector(".io-dropdown").classList.toggle("open");
+    const dropdown = this.el.querySelector(".io-dropdown");
+    dropdown.classList.toggle("open");
+    if (dropdown.classList.contains("open")) this._positionMobileMenu(dropdown);
+  }
+
+  /**
+   * 모바일(폭 640px 이하)에서 드롭다운 메뉴 위치를 직접 계산해 넣는다 — #toolbar가 좁은 화면에서
+   * 가로 스크롤(overflow-x:auto)이 되는데, CSS 규칙상 overflow-x가 visible이 아니면 overflow-y도
+   * 강제로 auto가 되어서(브라우저가 자동으로 맞춤) .toolbar-dropdown-menu가 버튼 아래로 튀어나온
+   * 부분이 그대로 잘려 안 보이는 문제가 있었다. 데스크톱처럼 position:absolute로 두면 이 클리핑을
+   * 피할 수 없으므로, 모바일에서는 style.css가 position:fixed로 바꿔두고 여기서 버튼의 실제 화면
+   * 좌표를 재서 인라인 top/left로 넣어준다(fixed는 조상의 overflow 클리핑에 안 걸림). 데스크톱
+   * 폭이면(또는 다시 데스크톱으로 돌아오면) 인라인 값을 지워 CSS의 원래 계산식으로 되돌린다.
+   */
+  _positionMobileMenu(dropdownEl) {
+    const menu = dropdownEl.querySelector(".toolbar-dropdown-menu");
+    if (!menu) return;
+    if (!window.matchMedia("(max-width: 640px)").matches) {
+      menu.style.top = "";
+      menu.style.left = "";
+      return;
+    }
+    const btn = dropdownEl.querySelector(":scope > button");
+    if (!btn) return;
+    const btnRect = btn.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect(); // .open으로 이미 display:flex라 실제 크기를 잴 수 있음
+    const margin = 6;
+    let left = btnRect.left;
+    if (left + menuRect.width > window.innerWidth - margin) left = window.innerWidth - menuRect.width - margin;
+    if (left < margin) left = margin;
+    menu.style.top = `${btnRect.bottom + margin}px`;
+    menu.style.left = `${left}px`;
   }
 
   /** typeLabel: 연결 모드가 켜져 있는 동안 미리 골라둔 관계 유형 이름(버튼에 표시용). */

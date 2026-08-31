@@ -20,6 +20,14 @@ const cropModalEl = document.getElementById("crop-modal");
 const marqueeBoxEl = document.getElementById("marquee-box");
 const bulkToolbarEl = document.getElementById("bulk-toolbar");
 
+// style.css의 모바일 분기(@media max-width:640px, 사이드바가 하단 시트로 바뀌는 지점)와
+// 반드시 같은 값을 써야 한다 — 여기서만 따로 값이 어긋나면 "CSS는 모바일인데 JS는 데스크톱으로
+// 판단"하는 것 같은 불일치가 생긴다.
+const MOBILE_BREAKPOINT_MQ = window.matchMedia("(max-width: 640px)");
+function isMobileLayout() {
+  return MOBILE_BREAKPOINT_MQ.matches;
+}
+
 const tree = new TreeModel();
 const store = new TreeStore();
 const undoMgr = new UndoManager(tree);
@@ -91,7 +99,9 @@ const toolbar = new Toolbar(toolbarEl, {
     const { x, y } = camera.screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
     const jitter = () => (Math.random() - 0.5) * 40;
     const person = tree.addPerson({ x: x + jitter(), y: y + jitter() });
-    handleCardClick(person.id);
+    // 모바일에서는 사이드바가 화면 하단 80%를 덮는 시트라, 방금 화면 중앙 근처에 생긴 카드를
+    // 바로 가려버린다 — 데스크톱과 달리 자동으로 열지 않고 그냥 만들어만 둔다(원하면 직접 탭).
+    if (!isMobileLayout()) handleCardClick(person.id);
   },
   connect: () => {
     if (connectMode) exitConnectMode();
@@ -575,6 +585,46 @@ tree.onChange((type, payload) => {
   if (type === "textbox:remove" && inspector.textBox?.id === payload) inspector.close();
   if (type === "relationship:remove" && inspector.relationship?.id === payload) inspector.close();
 });
+
+// 모바일 하단 시트: 내용이 이미 맨 위(scrollTop 0)까지 스크롤된 상태에서 계속 아래로 당기면,
+// 시트 전체가 손가락을 따라 내려가다가(당겨서 닫기, 네이티브 바텀시트에서 흔한 제스처) 일정
+// 거리 이상 당겨지면 닫히고, 안 되면 다시 스냅백된다. 스크롤이 맨 위가 아니면(아직 더 볼 내용이
+// 남아있으면) 평범한 내부 스크롤 그대로 둔다.
+let sheetDrag = null; // { pointerId, startY, dy, dragging }
+const SHEET_DISMISS_THRESHOLD = 90;
+
+inspectorEl.addEventListener("pointerdown", (e) => {
+  if (!isMobileLayout() || !inspectorEl.classList.contains("open")) return;
+  sheetDrag = { pointerId: e.pointerId, startY: e.clientY, dy: 0, dragging: false };
+});
+
+inspectorEl.addEventListener("pointermove", (e) => {
+  if (!sheetDrag || e.pointerId !== sheetDrag.pointerId) return;
+  const dy = e.clientY - sheetDrag.startY;
+  if (!sheetDrag.dragging) {
+    // 아직 "당겨서 닫기"로 확정하기 전 — 스크롤이 맨 위이고 아래로 당기는 중일 때만 전환한다.
+    // (조건을 안 만족하면 그냥 평범한 내부 스크롤로 흘려보낸다 — preventDefault를 안 부름)
+    if (inspectorEl.scrollTop > 0 || dy <= 0) return;
+    sheetDrag.dragging = true;
+    inspectorEl.style.transition = "none"; // 드래그 중엔 트랜지션을 꺼서 손가락을 그대로 따라가게
+    try { inspectorEl.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  }
+  e.preventDefault(); // 브라우저 기본 오버스크롤(바운스)을 막고 우리가 직접 옮긴다
+  sheetDrag.dy = Math.max(0, dy);
+  inspectorEl.style.transform = `translateY(${sheetDrag.dy}px)`;
+}, { passive: false });
+
+function endSheetDrag(e) {
+  if (!sheetDrag || (e && e.pointerId !== sheetDrag.pointerId)) return;
+  const { dragging, dy } = sheetDrag;
+  sheetDrag = null;
+  if (!dragging) return;
+  inspectorEl.style.transition = "";
+  inspectorEl.style.transform = ""; // 인라인을 지워 .open의 translateY(0)(또는 닫히면 100%)로 되돌아가게
+  if (dy > SHEET_DISMISS_THRESHOLD) inspector.close();
+}
+inspectorEl.addEventListener("pointerup", endSheetDrag);
+inspectorEl.addEventListener("pointercancel", endSheetDrag);
 
 let saveTimer = null;
 tree.onChange(() => {

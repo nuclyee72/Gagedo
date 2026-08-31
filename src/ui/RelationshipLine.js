@@ -1,12 +1,11 @@
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 export const TYPE_LABEL = {
-  // 부모-자식/배우자/형제자매는 선 자체(모양·색)로 이미 구분되니 기본 텍스트를 안 보여준다.
+  // 부모-자식/배우자는 선 자체(모양·색)로 이미 구분되니 기본 텍스트를 안 보여준다.
   // 사용자가 라벨을 직접 입력해 넣으면(rel.label) 그건 그대로 표시된다.
   "parent-child-solo": "",
   "parent-child": "",
   spouse: "",
-  sibling: "",
   custom: "",
 };
 
@@ -17,7 +16,6 @@ const TYPE_STYLE = {
   "parent-child-solo": { stroke: "#5b6b8c" },
   "parent-child": { stroke: "#5b6b8c" },
   spouse: { stroke: "#5b6b8c" },
-  sibling: { stroke: "#4f9d6d" },
   custom: { stroke: "#8a8f98" },
 };
 
@@ -26,7 +24,6 @@ export const TYPE_DISPLAY_NAME = {
   "parent-child-solo": "부모-자식(부모1)",
   "parent-child": "부모-자식(부모2)",
   spouse: "배우자",
-  sibling: "형제자매",
   custom: "기타",
 };
 

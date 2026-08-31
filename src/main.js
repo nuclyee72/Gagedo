@@ -6,6 +6,7 @@ import { DragController } from "./view/DragController.js";
 import { TreeRenderer } from "./view/TreeRenderer.js";
 import { Toolbar } from "./ui/Toolbar.js";
 import { InspectorPanel } from "./ui/InspectorPanel.js";
+import { downloadTreeSVG } from "./utils/svgExport.js";
 
 const viewportEl = document.getElementById("viewport");
 const stageEl = document.getElementById("stage");
@@ -113,6 +114,7 @@ const toolbar = new Toolbar(toolbarEl, {
   undo: () => undoMgr.performUndo(),
   redo: () => undoMgr.performRedo(),
   export: doExport,
+  exportImage: doExportImage,
   import: doImport,
   themeToggle: () => {
     const isDark = document.documentElement.getAttribute("data-theme") === "dark";
@@ -261,6 +263,12 @@ async function doExport() {
   a.download = `family-tree-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/** SVG(벡터)로 내보낸다 — 아무리 확대해도 선/글자가 안 깨진다(사진만 원본 해상도 그대로인 래스터). */
+async function doExportImage() {
+  const ok = await downloadTreeSVG({ tree, renderer, store }, `family-tree-${new Date().toISOString().slice(0, 10)}.svg`);
+  if (!ok) alert("내보낼 내용이 없습니다. 인물을 먼저 추가해주세요.");
 }
 
 async function doImport(file) {

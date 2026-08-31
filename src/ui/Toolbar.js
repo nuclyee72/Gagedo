@@ -35,6 +35,7 @@ export class Toolbar {
       </div>
       <div class="toolbar-group">
         <button type="button" data-action="export">내보내기</button>
+        <button type="button" data-action="export-image">이미지 저장</button>
         <label class="file-btn">가져오기<input type="file" accept="application/json" data-action="import"></label>
       </div>
       <span class="save-indicator" data-role="save-indicator">저장됨</span>

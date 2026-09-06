@@ -9,6 +9,7 @@ export class TreeModel {
     this.people = new Map(); // id -> Person
     this.relationships = new Map(); // id -> Relationship
     this.textBoxes = new Map(); // id -> TextBox (사람/관계와 무관한 자유 메모용 텍스트 오브젝트)
+    this.fields = new Map(); // id -> Field (인물을 묶는 컨테이너 + 템플릿 자리)
     this.view = { panX: 0, panY: 0, scale: 1 };
     this._listeners = new Set();
   }
@@ -29,13 +30,14 @@ export class TreeModel {
    */
   addPerson({
     x = 0, y = 0, name = "이름 없음", photoId = null, photoUrl = null, tags = [], notes = "",
-    borderColor = null, borderWidth = null, photoShape = "circle", locked = false,
+    borderColor = null, borderWidth = null, photoShape = "circle", locked = false, slotOf = null,
   } = {}) {
     const person = {
       id: uuid(), name, photoId, photoUrl, tags: [...tags], x, y, notes,
       borderColor, borderWidth, // 사진 테두리 커스텀(색/굵기) — null이면 기본값(테마 색/3px) 사용
       photoShape, // "circle" | "square" | "rounded"
       locked, // true면 드래그로 위치를 못 옮긴다(TreeRenderer._addCard가 검사)
+      slotOf, // { fieldId, slotId } | null — 지금 어느 필드의 어느 템플릿 슬롯에 꽂혀 있는지
     };
     this.people.set(person.id, person);
     this._emit("person:add", person);
@@ -111,8 +113,41 @@ export class TreeModel {
     this._emit("textbox:remove", id);
   }
 
+  /**
+   * 필드(Field) — 인물/텍스트박스를 하나로 묶어 옮기는 완전히 빈 컨테이너 + 템플릿 자리.
+   * 생김새는 텍스트박스와 같은 모양(왼쪽 위 모서리 + 폭/높이)이지만 텍스트는 없다.
+   * templateSlots는 필드 기준 상대좌표({id, relX, relY})라 필드가 움직이면 자동으로 같이
+   * 움직인다(따로 갱신할 필요 없음). locked는 person.locked와는 별개 개념 — 켜면 이 필드
+   * 위에 있는 오브젝트의 "개별" 드래그만 막고, 필드 자신을 옮기면 여전히 다 같이 움직인다.
+   */
+  addField({ x = 0, y = 0, width = 260, height = 180, locked = false, templateMode = false, templateSlots = [] } = {}) {
+    const field = {
+      id: uuid(), x, y, width, height, locked, templateMode,
+      templateSlots: templateSlots.map((s) => ({ id: s.id || uuid(), relX: s.relX, relY: s.relY })),
+    };
+    this.fields.set(field.id, field);
+    this._emit("field:add", field);
+    return field;
+  }
+
+  updateField(id, patch) {
+    const field = this.fields.get(id);
+    if (!field) return;
+    Object.assign(field, patch);
+    this._emit("field:update", field);
+  }
+
+  removeField(id) {
+    if (!this.fields.delete(id)) return;
+    // 이 필드의 슬롯에 꽂혀 있던 인물들은 자유로운 인물로 되돌아간다(정보는 그대로 유지).
+    for (const p of this.people.values()) {
+      if (p.slotOf?.fieldId === id) p.slotOf = null;
+    }
+    this._emit("field:remove", id);
+  }
+
   getBounds() {
-    if (!this.people.size && !this.textBoxes.size) return null;
+    if (!this.people.size && !this.textBoxes.size && !this.fields.size) return null;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of this.people.values()) {
       minX = Math.min(minX, p.x);
@@ -120,9 +155,9 @@ export class TreeModel {
       minY = Math.min(minY, p.y);
       maxY = Math.max(maxY, p.y);
     }
-    // 텍스트 박스는 (x,y)가 중심이 아니라 왼쪽 위 모서리라, 점 하나로만 취급하면 상자의 나머지
-    // 부분(오른쪽/아래쪽으로 width/height만큼)이 통째로 빠진다 — "전체보기"/이미지 저장에서 박스가
-    // 잘려 보이던 원인. 오른쪽 아래 모서리(x+width, y+height)까지 반드시 포함시킨다.
+    // 텍스트 박스/필드는 (x,y)가 중심이 아니라 왼쪽 위 모서리라, 점 하나로만 취급하면 상자의
+    // 나머지 부분(오른쪽/아래쪽으로 width/height만큼)이 통째로 빠진다 — "전체보기"/이미지
+    // 저장에서 박스가 잘려 보이던 원인. 오른쪽 아래 모서리(x+width, y+height)까지 포함시킨다.
     for (const b of this.textBoxes.values()) {
       const w = b.width ?? 200;
       const h = b.height ?? 50;
@@ -130,6 +165,12 @@ export class TreeModel {
       maxX = Math.max(maxX, b.x + w);
       minY = Math.min(minY, b.y);
       maxY = Math.max(maxY, b.y + h);
+    }
+    for (const f of this.fields.values()) {
+      minX = Math.min(minX, f.x);
+      maxX = Math.max(maxX, f.x + f.width);
+      minY = Math.min(minY, f.y);
+      maxY = Math.max(maxY, f.y + f.height);
     }
     return { minX, minY, maxX, maxY };
   }
@@ -139,6 +180,7 @@ export class TreeModel {
       people: [...this.people.values()],
       relationships: [...this.relationships.values()],
       textBoxes: [...this.textBoxes.values()],
+      fields: [...this.fields.values()],
       view: this.view,
     };
   }
@@ -148,6 +190,7 @@ export class TreeModel {
     this.people = new Map((data.people || []).map((p) => [p.id, p]));
     this.relationships = new Map((data.relationships || []).map((r) => [r.id, r]));
     this.textBoxes = new Map((data.textBoxes || []).map((b) => [b.id, b]));
+    this.fields = new Map((data.fields || []).map((f) => [f.id, f]));
     this.view = data.view || { panX: 0, panY: 0, scale: 1 };
     this._emit("reset", null);
   }

@@ -35,6 +35,9 @@
            자물쇠 표시를 마키 사각형이 가리지 않는다. (배경 위·카드 아래) -->
       <div id="marquee-box" aria-hidden="true"></div>
       <div id="stage">
+        <!-- 필드는 "그 위에 인물이 올라가는" 배경 컨테이너라 관계선/카드보다 가장 먼저(=가장
+             아래) 그려져야 한다 — z-index:auto인 형제끼리는 DOM 순서로 쌓이므로 여기 둔다. -->
+        <div id="fields-layer"></div>
         <svg id="lines-layer"></svg>
         <div id="world"></div>
       </div>

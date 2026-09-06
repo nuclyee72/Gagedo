@@ -1,5 +1,6 @@
 import { createCardElement, applyCardData } from "../ui/PersonCard.js";
 import { createTextBoxElement } from "../ui/TextBox.js";
+import { createFieldElement, createSlotElement } from "../ui/FieldBox.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
@@ -124,6 +125,16 @@ export async function buildTreeSVG({ tree, renderer, store }) {
   fo.setAttribute("height", String(height));
   const host = document.createElementNS(XHTML_NS, "div");
   host.setAttribute("style", "position:relative; width:100%; height:100%;");
+
+  // 필드는 "그 위에 인물이 올라가는" 배경이므로 인물/텍스트박스보다 먼저(z-order상 가장 아래) 담는다.
+  for (const field of tree.fields.values()) {
+    const el = createFieldElement(field);
+    el.querySelector(".field-resize")?.remove(); // 조작용 손잡이는 정적 이미지에 필요 없음
+    for (const slot of field.templateSlots) el.appendChild(createSlotElement(slot));
+    el.style.left = `${field.x - minX}px`;
+    el.style.top = `${field.y - minY}px`;
+    host.appendChild(el);
+  }
 
   const defaultAvatar = await fetchDefaultAvatarDataUrl();
   for (const person of tree.people.values()) {

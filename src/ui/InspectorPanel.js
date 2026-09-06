@@ -23,7 +23,8 @@ export class InspectorPanel {
     this.person = null;
     this.textBox = null;
     this.relationship = null;
-    this.mode = null; // "person" | "textbox" | "relationship" — 지금 사이드바가 어느 걸 보여주고 있는지
+    this.field = null;
+    this.mode = null; // "person" | "textbox" | "relationship" | "field" — 지금 사이드바가 어느 걸 보여주고 있는지
     this.cropEditor = new ImageCropEditor(cropModalEl);
     this._buildPersonSkeleton();
     this.mode = "person";
@@ -51,6 +52,15 @@ export class InspectorPanel {
       if (labelEl && document.activeElement !== labelEl) labelEl.value = payload.label || "";
       this._syncRelationshipColorAndStyle(payload);
       this._syncArrowControls(payload);
+    });
+
+    // 필드도 마찬가지 — 캔버스 쪽 상호작용(템플릿 모드 중 슬롯 추가/삭제 등)으로 field가 바뀌면
+    // 사이드바에 열려 있는 토글 버튼 상태도 같이 따라와야 한다.
+    tree.onChange((type, payload) => {
+      if (type !== "field:update") return;
+      if (this.mode !== "field" || !this.field || this.field.id !== payload.id) return;
+      this.field = payload;
+      this._syncFieldControls();
     });
   }
 
@@ -599,10 +609,78 @@ export class InspectorPanel {
     });
   }
 
+  /** 인물/텍스트박스/관계선처럼, 필드를 클릭했을 때 사이드바를 띄운다 — 완전히 빈 컨테이너라
+   * 이름/텍스트 입력창은 없고, 템플릿 수정/잠금 토글과 삭제 버튼만 둔다. */
+  openField(field) {
+    if (this.mode !== "field") {
+      this._buildFieldSkeleton();
+      this.mode = "field";
+    }
+    this.person = null;
+    this.textBox = null;
+    this.relationship = null;
+    this.field = field;
+    this._syncFieldControls();
+    this.el.classList.add("open");
+  }
+
+  _buildFieldSkeleton() {
+    this.el.innerHTML = `
+      <div class="inspector-header">
+        <strong>필드</strong>
+        <button type="button" class="inspector-close" aria-label="닫기">×</button>
+      </div>
+      <label class="field-toggle-row">
+        <span>템플릿 수정</span>
+        <button type="button" class="field-template-btn" title="켜면 필드의 빈 곳을 클릭해 인물 자리(점선)를 추가할 수 있어요">OFF</button>
+      </label>
+      <p class="field-hint">템플릿 수정이 켜진 동안 필드의 빈 곳을 클릭하면 그 자리에 점선 템플릿 자리가 생깁니다. 자리를 다시 클릭하면 삭제해요.</p>
+      <label class="field-toggle-row">
+        <span>이 필드 잠금</span>
+        <button type="button" class="field-lock-btn" title="켜면 포함된 오브젝트는 필드를 옮겨야만 같이 움직여요(개별 이동 불가)">🔓</button>
+      </label>
+      <button type="button" class="field-delete">이 필드 삭제</button>
+    `;
+
+    this.el.querySelector(".inspector-close").onclick = () => this.close();
+
+    this.el.querySelector(".field-template-btn").addEventListener("click", () => {
+      if (!this.field) return;
+      this.tree.updateField(this.field.id, { templateMode: !this.field.templateMode });
+    });
+
+    this.el.querySelector(".field-lock-btn").addEventListener("click", () => {
+      if (!this.field) return;
+      this.tree.updateField(this.field.id, { locked: !this.field.locked });
+    });
+
+    this.el.querySelector(".field-delete").addEventListener("click", () => {
+      if (!this.field) return;
+      if (confirm("이 필드를 삭제할까요? 안에 있던 인물/텍스트박스는 그대로 남습니다.")) {
+        this.tree.removeField(this.field.id);
+        this.close();
+      }
+    });
+  }
+
+  _syncFieldControls() {
+    const templateBtn = this.el.querySelector(".field-template-btn");
+    const templateOn = !!this.field?.templateMode;
+    templateBtn.textContent = templateOn ? "ON" : "OFF";
+    templateBtn.classList.toggle("active", templateOn);
+
+    const lockBtn = this.el.querySelector(".field-lock-btn");
+    const locked = !!this.field?.locked;
+    lockBtn.textContent = locked ? "🔒" : "🔓";
+    lockBtn.classList.toggle("active", locked);
+    lockBtn.title = locked ? "잠김 — 눌러서 풀기" : "이 필드 잠금";
+  }
+
   close() {
     this.person = null;
     this.textBox = null;
     this.relationship = null;
+    this.field = null;
     this.el.classList.remove("open");
   }
 

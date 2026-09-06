@@ -20,6 +20,7 @@ export class Toolbar {
           </div>
         </div>
         <button type="button" data-action="add-textbox">텍스트</button>
+        <button type="button" data-action="add-field">+필드</button>
       </div>
       <div class="toolbar-group toolbar-zoom-group">
         <button type="button" data-action="zoom-out" aria-label="축소">－</button>

@@ -5,7 +5,7 @@
  * - meta                   : 뷰 상태(pan/zoom) 등 싱글턴 값
  */
 const DB_NAME = "familyTreeDB";
-const DB_VERSION = 2; // v2: textBoxes 스토어 추가
+const DB_VERSION = 3; // v3: fields 스토어 추가
 export const SCHEMA_VERSION = 1;
 
 function openDB() {
@@ -16,6 +16,7 @@ function openDB() {
       if (!db.objectStoreNames.contains("people")) db.createObjectStore("people", { keyPath: "id" });
       if (!db.objectStoreNames.contains("relationships")) db.createObjectStore("relationships", { keyPath: "id" });
       if (!db.objectStoreNames.contains("textBoxes")) db.createObjectStore("textBoxes", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("fields")) db.createObjectStore("fields", { keyPath: "id" });
       if (!db.objectStoreNames.contains("images")) db.createObjectStore("images");
       if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
     };
@@ -60,13 +61,15 @@ export class TreeStore {
 
   async saveAll(tree) {
     const db = await this._db();
-    return runTx(db, ["people", "relationships", "textBoxes", "meta"], "readwrite", (s) => {
+    return runTx(db, ["people", "relationships", "textBoxes", "fields", "meta"], "readwrite", (s) => {
       s.people.clear();
       s.relationships.clear();
       s.textBoxes.clear();
+      s.fields.clear();
       for (const p of tree.people.values()) s.people.put(p);
       for (const r of tree.relationships.values()) s.relationships.put(r);
       for (const b of tree.textBoxes.values()) s.textBoxes.put(b);
+      for (const f of tree.fields.values()) s.fields.put(f);
       s.meta.put(tree.view, "view");
       s.meta.put(SCHEMA_VERSION, "schemaVersion");
     });
@@ -74,12 +77,13 @@ export class TreeStore {
 
   async loadAll() {
     const db = await this._db();
-    return runTx(db, ["people", "relationships", "textBoxes", "meta"], "readonly", async (s) => {
+    return runTx(db, ["people", "relationships", "textBoxes", "fields", "meta"], "readonly", async (s) => {
       const people = await reqToPromise(s.people.getAll());
       const relationships = await reqToPromise(s.relationships.getAll());
       const textBoxes = await reqToPromise(s.textBoxes.getAll());
+      const fields = await reqToPromise(s.fields.getAll());
       const view = await reqToPromise(s.meta.get("view"));
-      return { people, relationships, textBoxes, view: view || { panX: 0, panY: 0, scale: 1 } };
+      return { people, relationships, textBoxes, fields, view: view || { panX: 0, panY: 0, scale: 1 } };
     });
   }
 
@@ -112,6 +116,7 @@ export class TreeStore {
       people: [...tree.people.values()],
       relationships: [...tree.relationships.values()],
       textBoxes: [...tree.textBoxes.values()],
+      fields: [...tree.fields.values()],
       view: tree.view,
       images,
     };

@@ -7,11 +7,13 @@ import { TreeRenderer } from "./view/TreeRenderer.js";
 import { Toolbar } from "./ui/Toolbar.js";
 import { InspectorPanel } from "./ui/InspectorPanel.js";
 import { downloadTreeSVG, downloadTreePNG } from "./utils/svgExport.js";
+import { uuid } from "./utils/uuid.js";
 
 const viewportEl = document.getElementById("viewport");
 const stageEl = document.getElementById("stage");
 const worldEl = document.getElementById("world");
 const linesEl = document.getElementById("lines-layer");
+const fieldsEl = document.getElementById("fields-layer");
 const toolbarEl = document.getElementById("toolbar");
 const inspectorEl = document.getElementById("inspector");
 const emptyHintEl = document.getElementById("empty-hint");
@@ -75,11 +77,13 @@ renderer = new TreeRenderer({
   tree,
   worldEl,
   linesEl,
+  fieldsEl,
   camera,
   store,
   onCardClick: handleCardClick,
   onLineClick: handleLineClick,
   onTextBoxClick: handleTextBoxClick,
+  onFieldClick: handleFieldClick,
   trashEl,
 });
 
@@ -132,6 +136,15 @@ const toolbar = new Toolbar(toolbarEl, {
     // 텍스트 박스는 (x,y)가 왼쪽 위 모서리라, 화면 중앙에 "보이도록" 만들려면 기본 크기
     // (Tree.js addTextBox의 기본값 200×50)의 절반만큼 왼쪽/위로 당겨서 놓아야 한다.
     tree.addTextBox({ x: x + jitter() - 100, y: y + jitter() - 25 });
+  },
+  addField: () => {
+    const rect = viewportEl.getBoundingClientRect();
+    const { x, y } = camera.screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    const jitter = () => (Math.random() - 0.5) * 40;
+    // 필드도 텍스트박스처럼 (x,y)가 왼쪽 위 모서리라, 화면 중앙에 "보이도록" 만들려면 기본 크기
+    // (Tree.js addField의 기본값 260×180)의 절반만큼 왼쪽/위로 당겨서 놓는다.
+    const field = tree.addField({ x: x + jitter() - 130, y: y + jitter() - 90 });
+    handleFieldClick(field.id);
   },
   zoomIn: () => zoomAtCenter(1.25),
   zoomOut: () => zoomAtCenter(1 / 1.25),
@@ -220,6 +233,13 @@ function updateMarqueeHoverPreview() {
     el.classList.toggle("marquee-hover", !locked);
     nextEls.push(el);
   }
+  for (const [id, el] of renderer.fieldEls) {
+    if (!rectsIntersect(rect, el.getBoundingClientRect())) continue;
+    const locked = !!renderer.tree.fields.get(id)?.locked;
+    el.classList.toggle("drag-locked-preview", locked);
+    el.classList.toggle("marquee-hover", !locked);
+    nextEls.push(el);
+  }
   const nextSet = new Set(nextEls);
   for (const el of marqueeHoverEls) {
     if (!nextSet.has(el)) el.classList.remove("marquee-hover", "drag-locked-preview");
@@ -249,20 +269,26 @@ function finalizeMarquee() {
   for (const [id, el] of renderer.textBoxEls) {
     if (rectsIntersect(rect, el.getBoundingClientRect())) textBoxIds.push(id);
   }
+  const fieldIds = [];
+  for (const [id, el] of renderer.fieldEls) {
+    if (rectsIntersect(rect, el.getBoundingClientRect())) fieldIds.push(id);
+  }
 
-  const total = peopleIds.length + textBoxIds.length;
+  const total = peopleIds.length + textBoxIds.length + fieldIds.length;
   if (total >= 2) {
     renderer.setSelected(null);
     renderer.setSelectedTextBox(null);
     renderer.setSelectedLine(null);
+    renderer.setSelectedField(null);
     inspector.close();
-    renderer.setMultiSelection({ people: peopleIds, textBoxes: textBoxIds });
+    renderer.setMultiSelection({ people: peopleIds, textBoxes: textBoxIds, fields: fieldIds });
     updateBulkToolbar();
   } else if (total === 1) {
     renderer.clearMultiSelection();
     hideBulkToolbar();
     if (peopleIds.length) handleCardClick(peopleIds[0]);
-    else handleTextBoxClick(textBoxIds[0]);
+    else if (textBoxIds.length) handleTextBoxClick(textBoxIds[0]);
+    else handleFieldClick(fieldIds[0]);
   } else {
     renderer.clearMultiSelection();
     hideBulkToolbar();
@@ -297,7 +323,7 @@ bulkToolbarEl.querySelector('[data-action="bulk-lock"]').addEventListener("click
 });
 
 const backgroundDrag = new DragController(viewportEl, {
-  filter: (e) => !e.target.closest(".person-card") && !e.target.closest(".text-box"),
+  filter: (e) => !e.target.closest(".person-card") && !e.target.closest(".text-box") && !e.target.closest(".field-box"),
   onDragStart: (e) => {
     if (e.shiftKey) {
       marqueeState = { startX: e.clientX, startY: e.clientY };
@@ -327,6 +353,7 @@ const backgroundDrag = new DragController(viewportEl, {
     renderer.setSelected(null);
     renderer.setSelectedTextBox(null);
     renderer.setSelectedLine(null);
+    renderer.setSelectedField(null);
     renderer.clearMultiSelection();
     hideBulkToolbar();
     inspector.close();
@@ -360,6 +387,7 @@ function handleCardClick(id) {
   renderer.setSelected(id);
   renderer.setSelectedTextBox(null);
   renderer.setSelectedLine(null);
+  renderer.setSelectedField(null);
   renderer.clearMultiSelection();
   hideBulkToolbar();
   const person = tree.people.get(id);
@@ -374,12 +402,27 @@ function handleTextBoxClick(id) {
   renderer.setSelected(null);
   renderer.setSelectedTextBox(id);
   renderer.setSelectedLine(null);
+  renderer.setSelectedField(null);
   renderer.clearMultiSelection();
   hideBulkToolbar();
   inspector.openTextBox(box);
 }
 
-// ---------- Ctrl+C/Ctrl+V 복사·붙여넣기(인물/텍스트박스) ----------
+/** 인물/텍스트 박스와 똑같이, 필드를 클릭하면 오른쪽 사이드바를 띄워 템플릿/잠금을 고치게 한다. */
+function handleFieldClick(id) {
+  if (connectMode) return; // 필드는 관계 연결 대상이 아니다.
+  const field = tree.fields.get(id);
+  if (!field) return;
+  renderer.setSelected(null);
+  renderer.setSelectedTextBox(null);
+  renderer.setSelectedLine(null);
+  renderer.setSelectedField(id);
+  renderer.clearMultiSelection();
+  hideBulkToolbar();
+  inspector.openField(field);
+}
+
+// ---------- Ctrl+C/Ctrl+V 복사·붙여넣기(인물/텍스트박스/필드) ----------
 // clipboard: 마지막으로 복사한 내용의 스냅샷(id는 안 담음, 붙여넣을 때마다 새 id로 다시 만든다).
 // pasteCount: 같은 복사 내용을 여러 번 붙여넣을 때마다 조금씩 더 벌어지게(겹쳐 보이지 않게) 세는 값 —
 // 새로 복사할 때마다 0으로 되돌린다.
@@ -387,25 +430,48 @@ let clipboard = null;
 let pasteCount = 0;
 const PASTE_OFFSET = 40; // 붙여넣을 때마다 원본에서 이만큼(월드 좌표) 대각선으로 띄운다.
 
-/** 지금 선택된 것(마키 다중선택 2개 이상, 또는 사이드바에 열려 있는 인물/텍스트박스 하나)을
+/** 지금 선택된 것(마키 다중선택 2개 이상, 또는 사이드바에 열려 있는 인물/텍스트박스/필드 하나)을
  * 복사한다. 다중선택이면 그 안에서 서로 이어진 관계선(양쪽 다 선택 범위 안에 있는 것)도 같이
- * 담아서, 붙여넣을 때 내부 연결까지 그대로 살아있게 한다. */
+ * 담아서, 붙여넣을 때 내부 연결까지 그대로 살아있게 한다. 필드가 포함되면 그 순간 필드 위에
+ * "올라가 있는" 인물/텍스트박스도 (아직 안 골라져 있었다면) 함께 담는다 — "필드 복사 시 템플릿
+ * 및 포함된 인물들까지 전부 복사됨". */
 function copySelectionToClipboard() {
   if (connectMode) return; // 연결 모드 중엔(고르는 중인 대상과 헷갈리지 않게) 복사하지 않는다.
   let peopleIds = [];
   let textBoxIds = [];
+  let fieldIds = [];
   if (renderer.getMultiSelectionCount() >= 2) {
     peopleIds = [...renderer.multiSelected.people];
     textBoxIds = [...renderer.multiSelected.textBoxes];
+    fieldIds = [...renderer.multiSelected.fields];
   } else if (inspector.mode === "person" && inspector.person) {
     peopleIds = [inspector.person.id];
   } else if (inspector.mode === "textbox" && inspector.textBox) {
     textBoxIds = [inspector.textBox.id];
+  } else if (inspector.mode === "field" && inspector.field) {
+    fieldIds = [inspector.field.id];
   } else {
     return; // 관계선 사이드바가 열려 있거나 아무것도 선택 안 된 상태 — 복사할 대상이 없다.
   }
 
   const peopleIdSet = new Set(peopleIds);
+  const textBoxIdSet = new Set(textBoxIds);
+  for (const fieldId of fieldIds) {
+    const field = tree.fields.get(fieldId);
+    if (!field) continue;
+    const contained = renderer._objectsWithinField(field);
+    for (const id of contained.people) {
+      if (peopleIdSet.has(id)) continue; // 마키로 이미 따로 골라져 있었으면 중복으로 안 담는다.
+      peopleIdSet.add(id);
+      peopleIds.push(id);
+    }
+    for (const id of contained.textBoxes) {
+      if (textBoxIdSet.has(id)) continue;
+      textBoxIdSet.add(id);
+      textBoxIds.push(id);
+    }
+  }
+
   const relationships = [];
   for (const rel of tree.relationships.values()) {
     if (
@@ -420,6 +486,10 @@ function copySelectionToClipboard() {
   clipboard = {
     people: peopleIds.map((id) => ({ ...tree.people.get(id) })),
     textBoxes: textBoxIds.map((id) => ({ ...tree.textBoxes.get(id) })),
+    fields: fieldIds.map((id) => {
+      const f = tree.fields.get(id);
+      return { ...f, templateSlots: f.templateSlots.map((s) => ({ ...s })) };
+    }),
     relationships,
   };
   pasteCount = 0;
@@ -428,12 +498,12 @@ function copySelectionToClipboard() {
 /** clipboard에 담긴 내용을 전부 새 id로 다시 만들어 붙여넣고, 방금 만든 것들을 곧바로
  * 선택 상태로 만든다(붙이자마자 바로 옮길 수 있게). */
 function pasteClipboard() {
-  if (!clipboard || (!clipboard.people.length && !clipboard.textBoxes.length)) return;
+  if (!clipboard || (!clipboard.people.length && !clipboard.textBoxes.length && !clipboard.fields.length)) return;
   pasteCount += 1;
   const dx = PASTE_OFFSET * pasteCount;
   const dy = PASTE_OFFSET * pasteCount;
 
-  const idMap = new Map(); // 원본 인물 id -> 새로 만든 인물 id (관계 복원에 필요)
+  const idMap = new Map(); // 원본 인물 id -> 새로 만든 인물 id (관계/슬롯 복원에 필요)
   const newPeopleIds = [];
   for (const p of clipboard.people) {
     const created = tree.addPerson({
@@ -448,6 +518,8 @@ function pasteClipboard() {
       borderWidth: p.borderWidth,
       photoShape: p.photoShape,
       locked: false, // 복사본은 항상 잠금 풀린 상태로 시작 — 붙이자마자 바로 옮길 수 있게.
+      // slotOf는 아직 원본 필드/슬롯 id를 가리키고 있어 지금은 못 채운다 — 필드까지 다 만든
+      // 뒤(아래 fieldIdMap/slotIdMap이 갖춰진 다음) 한 번 더 돌며 새 id로 다시 연결한다.
     });
     idMap.set(p.id, created.id);
     newPeopleIds.push(created.id);
@@ -457,6 +529,34 @@ function pasteClipboard() {
   for (const b of clipboard.textBoxes) {
     const created = tree.addTextBox({ x: b.x + dx, y: b.y + dy, text: b.text, fontSize: b.fontSize, width: b.width, height: b.height });
     newTextBoxIds.push(created.id);
+  }
+
+  const fieldIdMap = new Map(); // 원본 필드 id -> 새 필드 id
+  const slotIdMap = new Map(); // 원본 슬롯 id -> 새 슬롯 id
+  const newFieldIds = [];
+  for (const f of clipboard.fields) {
+    const newSlots = f.templateSlots.map((s) => {
+      const newSlot = { id: uuid(), relX: s.relX, relY: s.relY };
+      slotIdMap.set(s.id, newSlot.id);
+      return newSlot;
+    });
+    const created = tree.addField({
+      x: f.x + dx, y: f.y + dy, width: f.width, height: f.height,
+      locked: f.locked, templateMode: f.templateMode, templateSlots: newSlots,
+    });
+    fieldIdMap.set(f.id, created.id);
+    newFieldIds.push(created.id);
+  }
+
+  // 인물이 템플릿 슬롯에 꽂혀 있었으면(slotOf), 그 필드도 이번에 함께 복사됐을 때만 새 필드/슬롯
+  // id로 다시 연결한다 — 필드 없이 인물만 복사된 경우엔 그냥 자유로운 인물로 붙여넣는다.
+  for (const p of clipboard.people) {
+    if (!p.slotOf) continue;
+    const newFieldId = fieldIdMap.get(p.slotOf.fieldId);
+    const newSlotId = slotIdMap.get(p.slotOf.slotId);
+    if (newFieldId && newSlotId) {
+      tree.updatePerson(idMap.get(p.id), { slotOf: { fieldId: newFieldId, slotId: newSlotId } });
+    }
   }
 
   for (const rel of clipboard.relationships) {
@@ -478,11 +578,12 @@ function pasteClipboard() {
   renderer.setSelected(null);
   renderer.setSelectedTextBox(null);
   renderer.setSelectedLine(null);
-  const total = newPeopleIds.length + newTextBoxIds.length;
+  renderer.setSelectedField(null);
+  const total = newPeopleIds.length + newTextBoxIds.length + newFieldIds.length;
   if (total >= 2) {
     renderer.clearMultiSelection();
     inspector.close();
-    renderer.setMultiSelection({ people: newPeopleIds, textBoxes: newTextBoxIds });
+    renderer.setMultiSelection({ people: newPeopleIds, textBoxes: newTextBoxIds, fields: newFieldIds });
     updateBulkToolbar();
   } else if (newPeopleIds.length === 1) {
     renderer.clearMultiSelection();
@@ -492,6 +593,10 @@ function pasteClipboard() {
     renderer.clearMultiSelection();
     hideBulkToolbar();
     handleTextBoxClick(newTextBoxIds[0]);
+  } else if (newFieldIds.length === 1) {
+    renderer.clearMultiSelection();
+    hideBulkToolbar();
+    handleFieldClick(newFieldIds[0]);
   }
 }
 
@@ -528,6 +633,7 @@ function handleLineClick(relId) {
   renderer.setSelected(null);
   renderer.setSelectedTextBox(null);
   renderer.setSelectedLine(relId);
+  renderer.setSelectedField(null);
   renderer.clearMultiSelection();
   hideBulkToolbar();
   inspector.openRelationship(rel);
@@ -593,6 +699,7 @@ tree.onChange((type, payload) => {
   if (type === "person:remove" && inspector.person?.id === payload) inspector.close();
   if (type === "textbox:remove" && inspector.textBox?.id === payload) inspector.close();
   if (type === "relationship:remove" && inspector.relationship?.id === payload) inspector.close();
+  if (type === "field:remove" && inspector.field?.id === payload) inspector.close();
 });
 
 // 모바일 하단 시트: 헤더(제목+× 있는 맨 위 줄)를 손가락으로 아래로 당기면 시트 전체가 그대로
@@ -652,6 +759,7 @@ document.addEventListener("keydown", (e) => {
     renderer.setSelected(null);
     renderer.setSelectedTextBox(null);
     renderer.setSelectedLine(null);
+    renderer.setSelectedField(null);
     renderer.clearMultiSelection();
     hideBulkToolbar();
     return;

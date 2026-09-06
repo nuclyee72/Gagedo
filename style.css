@@ -199,6 +199,15 @@ html, body {
   height: 1px;
 }
 
+#fields-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+}
+
 #empty-hint {
   position: absolute;
   inset: 0;
@@ -546,6 +555,111 @@ html, body {
   pointer-events: auto;
 }
 
+/* ---------- 필드(인물을 묶는 컨테이너 + 템플릿 자리) ---------- */
+
+.field-box {
+  position: absolute; /* (x,y) = 왼쪽 위 모서리, 텍스트박스와 같은 규칙 */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  /* z-index를 안 준다 — #fields-layer가 #lines-layer/#world보다 DOM에서 먼저 오므로
+     (index.html) z-index:auto끼리는 그 순서 그대로 가장 아래에 깔린다("그 위에 인물이
+     올라가는" 배경 컨테이너라는 의도와 맞음). */
+}
+
+/* 텍스트박스 카드와 같은 배경/테두리이지만 텍스트가 없는 완전히 빈 패널. */
+.field-content {
+  box-sizing: border-box;
+  border: 1.5px dashed var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field-box:hover .field-content {
+  border-color: var(--accent);
+}
+
+.field-box.selected .field-content,
+.field-box.marquee-hover .field-content {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), 0 2px 12px var(--accent-glow);
+}
+
+.field-box.drag-locked-preview .field-content {
+  opacity: 0.4;
+}
+
+.field-box.drag-locked-preview::after {
+  content: "🔒";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* 템플릿 수정 모드로 켜져 있는 동안은 실선 강조 테두리로 "지금 이 필드를 편집 중"임을 보여준다. */
+.field-box.template-editing .field-content {
+  border-style: solid;
+  border-color: var(--accent);
+}
+
+.field-resize {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background:
+    linear-gradient(135deg, transparent 0 40%, var(--panel-bg) 40% 46%, transparent 46% 60%, var(--panel-bg) 60% 66%, transparent 66%),
+    var(--accent);
+  border: 2px solid var(--panel-bg);
+  box-shadow: 0 1px 4px var(--shadow);
+  cursor: nwse-resize;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+
+.field-box.selected .field-resize {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 템플릿 자리(점선 원) — 인물 사진 크기(--photo-size)와 맞춰서 실제 인물이 꽂혔을 때 자연스럽게
+   겹치게 한다. relX/relY(슬롯 중심)를 그대로 left/top으로 쓰고 transform으로 중심을 맞춘다
+   (인물 카드의 x/y가 사진 원 "중심"인 것과 같은 규칙). */
+.field-slot {
+  position: absolute;
+  width: var(--photo-size);
+  height: var(--photo-size);
+  transform: translate(-50%, -50%);
+  border: 2px dashed var(--muted);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 32px;
+  opacity: 0.6;
+  cursor: pointer;
+  transition: border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.field-slot::after {
+  content: "👤";
+  opacity: 0.5;
+}
+
+.field-slot:hover {
+  border-color: var(--accent);
+  opacity: 1;
+}
+
 /* ---------- Relationship lines (SVG) ---------- */
 
 /* stroke-width는 더 이상 여기(또는 RelationshipLine.js)에 고정값으로 안 둔다 — TreeRenderer.js의
@@ -758,6 +872,36 @@ html, body {
 #inspector .f-lock-btn.active {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+/* ---------- 필드 사이드바(템플릿 수정/잠금 토글) ---------- */
+
+.field-toggle-row {
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text) !important;
+  font-size: 13px !important;
+}
+
+.field-toggle-row .field-template-btn,
+.field-toggle-row .field-lock-btn {
+  min-width: 44px;
+  font-size: 13px;
+  padding: 5px 10px;
+}
+
+.field-toggle-row .field-template-btn.active,
+.field-toggle-row .field-lock-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.field-hint {
+  margin: -6px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 /* ---------- "속성"(사진 모양/테두리) 접이식 섹션 ---------- */

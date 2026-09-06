@@ -548,10 +548,16 @@ html, body {
 
 /* ---------- Relationship lines (SVG) ---------- */
 
+/* stroke-width는 더 이상 여기(또는 RelationshipLine.js)에 고정값으로 안 둔다 — TreeRenderer.js의
+   _applyLineScale/updateLineScaleForZoom이 배율(camera.scale)이 바뀔 때마다 "목표 화면 폭 ÷ 배율"을
+   world 좌표계 stroke-width로 직접 계산해 넣는다. (참고: vector-effect:non-scaling-stroke는
+   SVG 내부 transform만 상쇄하고, #stage에 건 CSS transform: scale(...)로 인한 확대/축소는 상쇄
+   못 한다 — 실제로 테스트해서 확인함. 그래서 많이 축소하면 의도한 폭이 1 실제 픽셀보다 작아지는데
+   브라우저가 최소 폭 근처로 "올림"해서 그려버려, 카드는 계속 작아지는데 선만 상대적으로 안
+   가늘어져 오히려 굵어 보이는 문제가 있었다 — JS가 직접 배율의 역수를 곱해 넣어야 진짜로 해결됨.) */
 .rel-line-hit {
   fill: none;
   stroke: transparent;
-  stroke-width: 16;
   pointer-events: stroke;
   cursor: pointer;
 }
@@ -580,7 +586,8 @@ html, body {
 
 /* 사이드바가 열려 있는(선택된) 관계선 강조 — 인물 카드/텍스트 박스의 selected 표시와 같은 결. */
 .rel-line.selected .rel-line-visible {
-  stroke-width: 4;
+  /* stroke-width는 TreeRenderer.js._applyLineScale이 selected 여부를 보고 직접 계산해 넣는다
+     (여기서 고정값으로 덮어쓰면 화면 배율에 안 맞는 굵기가 되어버림). */
   filter: drop-shadow(0 0 3px var(--accent-glow));
 }
 

@@ -112,7 +112,9 @@ export function applyLineStyle(g, rel) {
   // rel.color가 있으면(사이드바에서 사용자가 직접 고른 값) 유형 기본색 대신 그걸 쓴다.
   const color = rel.color || style.stroke;
   visible.setAttribute("stroke", color);
-  visible.setAttribute("stroke-width", "2.5");
+  // stroke-width는 여기서 안 정한다 — TreeRenderer.js._applyLineScale이 이 함수를 부른 직후
+  // 매번 화면 배율에 맞게(camera.scale 기준) 다시 계산해 넣는다(안 그러면 확대/축소 시 선만
+  // 상대적으로 굵어 보이는 문제가 있었다).
   // 선 종류는 이제 유형별 기본값이 없다 — rel.lineStyle이 없으면 항상 "실선"이 기본이다.
   const dasharray = LINE_STYLE_PRESETS[rel.lineStyle || "solid"].dash;
   if (dasharray) visible.setAttribute("stroke-dasharray", dasharray);

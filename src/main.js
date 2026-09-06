@@ -32,11 +32,20 @@ const tree = new TreeModel();
 const store = new TreeStore();
 const undoMgr = new UndoManager(tree);
 
+// Camera 생성자가 초기 transform을 세팅하면서 onChange를 그 자리에서 바로 한 번 부르는데,
+// 그 시점엔 아직 renderer가 없다(바로 아래에서 만들어짐) — let으로 미리 선언만 해두고 콜백
+// 안에서는 optional chaining으로 안전하게 참조한다(그 첫 호출 때는 어차피 그려진 선이 없어
+// 아무 것도 안 해도 무방).
+let renderer;
+
 const camera = new Camera(viewportEl, stageEl, {
   onChange: (view) => {
     tree.view = view;
     viewportEl.style.backgroundPosition = `${view.panX}px ${view.panY}px`;
     viewportEl.style.backgroundSize = `${24 * view.scale}px ${24 * view.scale}px`;
+    // 관계선 굵기가 화면 배율과 무관하게 항상 같은 화면 픽셀 두께로 보이도록(확대/축소 시
+    // 선만 상대적으로 굵어 보이는 문제 방지).
+    renderer?.updateLineScaleForZoom();
   },
 });
 
@@ -62,7 +71,7 @@ const CONNECT_STEP_HINTS = {
   custom: ["첫 번째 인물을 클릭하세요", "두 번째 인물을 클릭하세요"],
 };
 
-const renderer = new TreeRenderer({
+renderer = new TreeRenderer({
   tree,
   worldEl,
   linesEl,

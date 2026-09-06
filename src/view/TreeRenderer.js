@@ -10,6 +10,19 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 // 붙음) 잘 안 달라붙는다는 피드백이 있어 키웠다.
 const SNAP_THRESHOLD_PX = 14;
 
+// 관계선 굵기를 "화면 픽셀 기준"으로 일정하게 유지하기 위한 목표값들.
+// #stage의 CSS transform(scale)이 SVG(#lines-layer) 전체를 사진처럼 통째로 확대/축소하므로,
+// stroke-width(월드 좌표계 값)도 그 배율만큼 같이 줄어든다 — 많이 축소하면 실제 렌더링 폭이
+// 1 화면 픽셀보다 작아지는데, 브라우저는 그렇게 가늘게는 못 그리고 최소 폭 근처로 "올림"해서
+// 그려버린다. 그 결과 카드는 계속 작아지는데 선만 상대적으로 안 가늘어져 오히려 굵어 보이는
+// 문제가 있었다(특히 여러 선이 가까이 몰려 있으면 더 두드러짐). SVG의 vector-effect:
+// non-scaling-stroke는 SVG 내부(viewBox 등) transform만 상쇄하고 이런 CSS transform까지는
+// 상쇄하지 못해서(직접 확인함) 쓸모가 없었다 — 그래서 배율이 바뀔 때마다 "목표 화면 폭 ÷ 배율"을
+// 직접 계산해 stroke-width에 넣어준다(카드가 작아지는 만큼 선도 똑같이, 끝까지 가늘어짐).
+const LINE_TARGET_SCREEN_PX = 1.5;
+const LINE_SELECTED_TARGET_SCREEN_PX = 3;
+const LINE_HIT_TARGET_SCREEN_PX = 16; // 보이지 않는 클릭 판정 폭도 화면 기준으로 일정하게
+
 /** TreeModel의 변화를 구독해 사람 카드(DOM)와 관계선(SVG)을 동기화한다. */
 export class TreeRenderer {
   constructor({ tree, worldEl, linesEl, camera, store, onCardClick, onLineClick, onTextBoxClick, trashEl }) {
@@ -183,7 +196,10 @@ export class TreeRenderer {
 
   /** 사람 카드의 setSelected와 같은 역할 — 관계선 쪽 선택 강조(사이드바가 열려 있는 대상). */
   setSelectedLine(id) {
-    for (const [rid, el] of this.lineEls) el.classList.toggle("selected", rid === id);
+    for (const [rid, el] of this.lineEls) {
+      el.classList.toggle("selected", rid === id);
+      this._applyLineScale(el); // 선택 여부에 따라 목표 굵기(2px/3.5px)가 달라지므로 다시 계산
+    }
   }
 
   /** 배경을 Shift+드래그해서 만든 마키 사각형 안에 들어온 인물/텍스트박스를 한꺼번에 선택 상태로
@@ -882,7 +898,26 @@ export class TreeRenderer {
     const g = createLineElement(rel);
     this.linesEl.appendChild(g);
     this.lineEls.set(rel.id, g);
+    this._applyLineScale(g);
     this._updateLine(rel.id);
+  }
+
+  /** 이 관계선 하나의 stroke-width를 지금 배율(camera.scale) 기준으로 다시 계산해 넣는다 —
+   * applyLineStyle이 stroke-width를 고정값(월드 좌표계)으로 초기화해버리는 모든 경로(생성/색상
+   * 변경 등) 뒤에, 그리고 배율 자체가 바뀔 때마다 불러야 한다. */
+  _applyLineScale(g) {
+    const scale = this.camera.scale || 1;
+    const isSelected = g.classList.contains("selected");
+    const visible = g.querySelector(".rel-line-visible");
+    if (visible) visible.setAttribute("stroke-width", (isSelected ? LINE_SELECTED_TARGET_SCREEN_PX : LINE_TARGET_SCREEN_PX) / scale);
+    const hit = g.querySelector(".rel-line-hit");
+    if (hit) hit.setAttribute("stroke-width", LINE_HIT_TARGET_SCREEN_PX / scale);
+  }
+
+  /** 화면 확대/축소가 바뀔 때마다(main.js가 camera.onChange에서 불러줌) 지금 그려진 관계선
+   * 전부의 굵기를 다시 계산한다. */
+  updateLineScaleForZoom() {
+    for (const g of this.lineEls.values()) this._applyLineScale(g);
   }
 
   /**
@@ -1093,6 +1128,7 @@ export class TreeRenderer {
         const g = this.lineEls.get(payload.id);
         if (g) {
           applyLineStyle(g, payload);
+          this._applyLineScale(g); // applyLineStyle이 되돌려놓은 stroke-width를 화면 배율에 맞게 다시 계산
           this._updateLine(payload.id);
           if (payload.type === "parent-child") this._refreshAllParentChildLines();
         }

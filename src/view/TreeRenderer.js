@@ -247,8 +247,8 @@ export class TreeRenderer {
    * anchorId/anchorType: 실제로 손으로 잡아 끄는 대상 — 그룹 전체는 서로 상대 위치를 유지한 채
    * 통째로 움직이되, 스냅(자동 클리핑)은 이 anchor 하나만 기준으로 검사해서 그 결과(스냅으로
    * 보정된 만큼)를 그룹 전체에 동일하게 더해준다("이 카드를 스냅에 맞추면 나머지도 딱 붙어 따라
-   * 온다"는 느낌). anchor가 텍스트박스면(원래도 텍스트박스는 스냅이 없었으므로) 스냅 없이 그냥
-   * 델타만 적용한다. */
+   * 온다"는 느낌). anchor가 사람이면 _computeSnap을, 텍스트박스면 _computeTextBoxSnap을 쓴다
+   * (둘 다 같은 {x,y,guideX,guideY,extraGuides} 모양을 돌려주므로 아래 로직이 공통으로 처리). */
   _beginGroupDrag(anchorId, anchorType) {
     const positions = new Map(); // id -> { x, y, type }
     const lockedEls = []; // 선택은 됐지만 잠겨 있어 이번 드래그에선 안 움직이는 것들의 DOM
@@ -299,6 +299,15 @@ export class TreeRenderer {
         const rawX = anchorStart.x + g.dx;
         const rawY = anchorStart.y + g.dy;
         snapped = this._computeSnap(rawX, rawY, anchorPerson, g.memberIds);
+        snapDx = snapped.x - rawX;
+        snapDy = snapped.y - rawY;
+      }
+    } else if (g.anchorType === "textbox" && anchorStart) {
+      const anchorBox = this.tree.textBoxes.get(g.anchorId);
+      if (anchorBox) {
+        const rawX = anchorStart.x + g.dx;
+        const rawY = anchorStart.y + g.dy;
+        snapped = this._computeTextBoxSnap(rawX, rawY, anchorBox, g.memberIds);
         snapDx = snapped.x - rawX;
         snapDy = snapped.y - rawY;
       }
@@ -480,7 +489,8 @@ export class TreeRenderer {
     this.cardDrags.set(person.id, drag);
   }
 
-  /** 자유 텍스트 오브젝트 카드 — 사람 카드와 달리 스냅 없이 자유 이동, 클릭하면 바로 편집. */
+  /** 자유 텍스트 오브젝트 카드 — 인물 카드와는 다른 스냅 기준(다른 텍스트 박스와의 가장자리·중간
+   * 정렬, _computeTextBoxSnap)으로 이동 시 클리핑되고, 클릭하면 바로 편집. */
   _addTextBox(box) {
     const el = createTextBoxElement(box);
 
@@ -506,8 +516,11 @@ export class TreeRenderer {
         } else {
           rawX += dx;
           rawY += dy;
-          box.x = rawX;
-          box.y = rawY;
+          const snapped = this._computeTextBoxSnap(rawX, rawY, box);
+          box.x = snapped.x;
+          box.y = snapped.y;
+          this._setGuide("h", snapped.guideY);
+          this._setGuide("v", snapped.guideX);
           el.style.left = `${box.x}px`;
           el.style.top = `${box.y}px`;
         }
@@ -515,6 +528,7 @@ export class TreeRenderer {
       },
       onMoveEnd: (e) => {
         if (box.locked) return;
+        this._hideSnapGuides();
         const droppedOnTrash = e && this._isOverTrash(e.clientX, e.clientY);
         this._hideTrash();
         if (this._groupDragState) {
@@ -551,22 +565,19 @@ export class TreeRenderer {
       onResize: (dxWorld, dyWorld) => {
         rawW += dxWorld;
         rawH += dyWorld;
-        // 상자 폭/높이가 지금 글자 크기(box.fontSize)의 배수에 거의 맞아떨어지면 그 값에 달라붙는다
-        // ("자동 클리핑") — 예: 글자 크기가 20이면 40/60/80...에 가까워질 때 정확히 그 값이 된다.
-        // 인물 카드 스냅과 같은 방식으로, 화면 기준 오차(줌 배율 반영)를 threshold로 둔다.
-        const threshold = 6 / this.camera.scale;
-        const snapToFontUnit = (raw) => {
-          const unit = box.fontSize || 16;
-          const nearest = Math.round(raw / unit) * unit;
-          return Math.abs(nearest - raw) <= threshold ? nearest : raw;
-        };
-        const w = Math.max(MIN_W, Math.round(snapToFontUnit(rawW)));
-        const h = Math.max(MIN_H, Math.round(snapToFontUnit(rawH)));
+        // 폭/높이 후보 두 갈래(글자 크기 배수 / 다른 텍스트 박스와의 가장자리·중간 정렬) 중
+        // 더 가까운 쪽에 달라붙는다("자동 클리핑") — _computeTextBoxResizeSnap이 둘을 한 번에 비교.
+        const snapped = this._computeTextBoxResizeSnap(box, rawW, rawH);
+        const w = Math.max(MIN_W, Math.round(snapped.w));
+        const h = Math.max(MIN_H, Math.round(snapped.h));
         const content = el.querySelector(".text-box-content");
         content.style.width = `${w}px`;
         content.style.height = `${h}px`;
+        this._setGuide("h", snapped.guideY);
+        this._setGuide("v", snapped.guideX);
       },
       onResizeEnd: () => {
+        this._hideSnapGuides();
         const content = el.querySelector(".text-box-content");
         const w = parseFloat(content.style.width) || box.width;
         const h = parseFloat(content.style.height) || box.height;
@@ -806,6 +817,110 @@ export class TreeRenderer {
       yCandidates.push({ y: other.y - ROW_SPACING, anchor });
     }
     return { xCandidates, yCandidates };
+  }
+
+  /**
+   * 텍스트 박스를 옮길 때 다른 텍스트 박스와 "같은 종류"의 기준선(왼쪽↔왼쪽, 오른쪽↔오른쪽,
+   * 위↔위, 아래↔아래, 가로 중간↔가로 중간, 세로 중간↔세로 중간)이 가까우면 그 값에 달라붙는다.
+   * 사람 카드는 중심점 하나로 취급해 스냅했지만, 텍스트 박스는 실제 폭/높이가 있는 사각형이라
+   * 가장자리·중간선까지 비교해야 "정렬"이라는 느낌이 난다(왼쪽↔오른쪽처럼 서로 다른 종류를
+   * 엇갈려 맞추는 건 지금은 안 함 — 헷갈릴 수 있어서 같은 종류끼리만).
+   * excludeIds: 그룹 드래그 중인 다른 멤버(계속 상대 위치가 고정이라 후보로 부적절)는 제외.
+   */
+  _computeTextBoxSnap(rawX, rawY, box, excludeIds = null) {
+    const threshold = SNAP_THRESHOLD_PX / this.camera.scale;
+    const w = box.width ?? 200;
+    const h = box.height ?? 50;
+
+    let bestX = null, bestXDist = threshold, guideX = null;
+    let bestY = null, bestYDist = threshold, guideY = null;
+
+    const myXs = [rawX, rawX + w, rawX + w / 2]; // 왼쪽, 오른쪽, 가로 중간
+    const myYs = [rawY, rawY + h, rawY + h / 2]; // 위, 아래, 세로 중간
+
+    for (const other of this.tree.textBoxes.values()) {
+      if (other.id === box.id || excludeIds?.has(other.id)) continue;
+      const ow = other.width ?? 200;
+      const oh = other.height ?? 50;
+      const theirXs = [other.x, other.x + ow, other.x + ow / 2];
+      const theirYs = [other.y, other.y + oh, other.y + oh / 2];
+
+      for (let i = 0; i < 3; i++) {
+        const dx = theirXs[i] - myXs[i];
+        if (Math.abs(dx) < bestXDist) {
+          bestXDist = Math.abs(dx);
+          bestX = rawX + dx; // rawX를 그만큼 밀면 내 i번째 기준선이 상대와 정확히 겹친다
+          guideX = theirXs[i];
+        }
+        const dy = theirYs[i] - myYs[i];
+        if (Math.abs(dy) < bestYDist) {
+          bestYDist = Math.abs(dy);
+          bestY = rawY + dy;
+          guideY = theirYs[i];
+        }
+      }
+    }
+
+    return {
+      x: bestX !== null ? bestX : rawX,
+      y: bestY !== null ? bestY : rawY,
+      guideX,
+      guideY,
+      extraGuides: [], // _computeSnap(사람 카드)과 반환 모양을 맞춰 그룹 드래그 쪽에서 그대로 재사용
+    };
+  }
+
+  /**
+   * 텍스트 박스 리사이즈(모서리 핸들) 중 폭/높이 후보를 계산한다 — 두 갈래를 한 번에 비교해서
+   * 더 가까운 쪽이 이긴다: (1) 기존 "글자 크기 배수" 스냅, (2) 다른 텍스트 박스와의 정렬(내
+   * 오른쪽 가장자리 또는 가로 중간이 상대의 왼쪽/오른쪽/가로 중간과 같아지는 폭 — 세로도 동일).
+   * 왼쪽 위 모서리는 리사이즈 중 안 움직이므로 "내 왼쪽/위"는 후보에 없다(오른쪽/아래/중간만).
+   */
+  _computeTextBoxResizeSnap(box, rawW, rawH) {
+    // 두 후보 갈래가 서로 다른 임계값을 쓴다 — 글자 크기 배수는 원래부터 6px(화면 기준)로
+    // 빡빡하게 잡아뒀던 값이라(사이즈가 조금만 늘어도 자꾸 배수에 걸리면 오히려 불편해서),
+    // 이번에 추가한 텍스트박스-끼리 정렬은 인물 카드와 같은 SNAP_THRESHOLD_PX(14)를 쓴다.
+    // 하나의 공통 threshold로 합치면 font 배수 쪽이 원래보다 훨씬 헐렁해져 버려서(6→14) 따로 둔다.
+    const fontThreshold = 6 / this.camera.scale;
+    const alignThreshold = SNAP_THRESHOLD_PX / this.camera.scale;
+    const fontUnit = box.fontSize || 16;
+
+    let bestW = null, bestWDist = Infinity, guideX = null;
+    let bestH = null, bestHDist = Infinity, guideY = null;
+
+    const fontWCandidate = Math.round(rawW / fontUnit) * fontUnit;
+    const fontWDist = Math.abs(fontWCandidate - rawW);
+    if (fontWDist <= fontThreshold && fontWDist < bestWDist) { bestWDist = fontWDist; bestW = fontWCandidate; }
+    const fontHCandidate = Math.round(rawH / fontUnit) * fontUnit;
+    const fontHDist = Math.abs(fontHCandidate - rawH);
+    if (fontHDist <= fontThreshold && fontHDist < bestHDist) { bestHDist = fontHDist; bestH = fontHCandidate; }
+
+    const myRight = box.x + rawW, myCenterX = box.x + rawW / 2;
+    const myBottom = box.y + rawH, myCenterY = box.y + rawH / 2;
+    for (const other of this.tree.textBoxes.values()) {
+      if (other.id === box.id) continue;
+      const ow = other.width ?? 200;
+      const oh = other.height ?? 50;
+      for (const targetX of [other.x, other.x + ow, other.x + ow / 2]) {
+        const dRight = Math.abs(targetX - myRight);
+        if (dRight <= alignThreshold && dRight < bestWDist) { bestWDist = dRight; bestW = targetX - box.x; guideX = targetX; }
+        const dCenter = Math.abs(targetX - myCenterX);
+        if (dCenter <= alignThreshold && dCenter < bestWDist) { bestWDist = dCenter; bestW = (targetX - box.x) * 2; guideX = targetX; }
+      }
+      for (const targetY of [other.y, other.y + oh, other.y + oh / 2]) {
+        const dBottom = Math.abs(targetY - myBottom);
+        if (dBottom <= alignThreshold && dBottom < bestHDist) { bestHDist = dBottom; bestH = targetY - box.y; guideY = targetY; }
+        const dCenter = Math.abs(targetY - myCenterY);
+        if (dCenter <= alignThreshold && dCenter < bestHDist) { bestHDist = dCenter; bestH = (targetY - box.y) * 2; guideY = targetY; }
+      }
+    }
+
+    return {
+      w: bestW !== null ? bestW : rawW,
+      h: bestH !== null ? bestH : rawH,
+      guideX,
+      guideY,
+    };
   }
 
   _setGuide(axis, value) {

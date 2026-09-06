@@ -44,15 +44,27 @@ export class TreeModel {
     return person;
   }
 
+  /** 인물이 지금 어느 필드의 어느 슬롯에 꽂혀 있는지(slotOf)가 바뀌면, 그 필드(옛 필드/새 필드
+   * 둘 다 — 같은 필드 안에서 슬롯만 바꾼 경우도 포함)의 템플릿 관계를 다시 확인해 실제 관계선을
+   * 새로 만들거나 지운다("템플릿끼리 그은 관계 — 양쪽 슬롯이 다 채워지면 그 인물들의 진짜
+   * 관계선이 되고, 한쪽이 빠지면 다시 템플릿 것으로 돌아간다"). */
   updatePerson(id, patch) {
     const person = this.people.get(id);
     if (!person) return;
+    const priorSlotOf = person.slotOf;
     Object.assign(person, patch);
     this._emit("person:update", person);
+    if ("slotOf" in patch) {
+      if (priorSlotOf?.fieldId) this._resyncFieldTemplateRelationships(priorSlotOf.fieldId);
+      if (person.slotOf?.fieldId) this._resyncFieldTemplateRelationships(person.slotOf.fieldId);
+    }
   }
 
   removePerson(id) {
-    if (!this.people.delete(id)) return;
+    const person = this.people.get(id);
+    if (!person) return;
+    const priorSlotOf = person.slotOf;
+    this.people.delete(id);
     for (const [relId, rel] of this.relationships) {
       // "부모-자식(부모2)"는 rel.fromId(부모1)/rel.toId(자식) 뿐 아니라 rel.viaSpouseId(부모2)도
       // 참조한다 — 부모2(배우자) 쪽이 지워지면 그 관계선은 더 이상 "이 부부의 자식"이라는 의미가
@@ -61,6 +73,17 @@ export class TreeModel {
       if (rel.fromId === id || rel.toId === id || rel.viaSpouseId === id) this.relationships.delete(relId);
     }
     this._emit("person:remove", id);
+    // 슬롯에 꽂혀 있던 인물 자체가 삭제되면 그 슬롯도 다시 빈 자리가 된 것 — 빼낼 때와 똑같이
+    // 그 슬롯이 걸린 템플릿 관계의 실제 관계선을 정리한다.
+    if (priorSlotOf?.fieldId) this._resyncFieldTemplateRelationships(priorSlotOf.fieldId);
+  }
+
+  /** 주어진 필드의 그 슬롯을 지금 차지하고 있는 인물(없으면 null). */
+  personInSlot(fieldId, slotId) {
+    for (const p of this.people.values()) {
+      if (p.slotOf?.fieldId === fieldId && p.slotOf?.slotId === slotId) return p;
+    }
+    return null;
   }
 
   /**
@@ -124,17 +147,35 @@ export class TreeModel {
    * selfLocked는 반대로 person.locked/textBox.locked와 같은 뜻 — 켜면 필드 "자신"의 위치를
    * (직접 드래그로든, 마키로 묶어 그룹으로든) 못 옮긴다. 리사이즈는 텍스트박스가 locked여도
    * 리사이즈는 막지 않는 것과 같은 원칙으로 selfLocked와 무관하게 항상 가능하다.
+   * templateRelationships는 슬롯끼리 이어둔 "안내선" — { id, type, slotIds, label, color,
+   * lineStyle, bidirectional, materializedRelIds }. type/slotIds 구성은 &관계 연결과 같다
+   * (parent-child-solo/spouse/arrow/custom은 slotIds 2개, parent-child(부모2)는 3개 —
+   * [부모1, 부모2, 자식] 순서). 양쪽(또는 세) 슬롯에 실제 인물이 다 채워지면 그 인물들 사이의
+   * 진짜 relationship이 자동으로 생기고(materializedRelIds에 그 id를 기록), 한 명이라도
+   * 빠지면 그 관계선은 지워지고 다시 "템플릿의 것"(안내선)으로 돌아간다 — _resyncFieldTemplateRelationships가
+   * updatePerson/removePerson(슬롯 점유 변화)과 updateField(슬롯/템플릿 관계 변화) 때마다 맞춘다.
    */
   addField({
     x = 0, y = 0, width = 260, height = 180, locked = false, selfLocked = false,
-    templateMode = false, templateSlots = [],
+    templateMode = false, templateSlots = [], templateRelationships = [],
   } = {}) {
     const field = {
       id: uuid(), x, y, width, height, locked, selfLocked, templateMode,
       templateSlots: templateSlots.map((s) => ({ id: s.id || uuid(), relX: s.relX, relY: s.relY })),
+      templateRelationships: templateRelationships.map((tr) => ({
+        id: tr.id || uuid(),
+        type: tr.type,
+        slotIds: [...tr.slotIds],
+        label: tr.label || "",
+        color: tr.color ?? null,
+        lineStyle: tr.lineStyle ?? null,
+        bidirectional: !!tr.bidirectional,
+        materializedRelIds: [...(tr.materializedRelIds || [])],
+      })),
     };
     this.fields.set(field.id, field);
     this._emit("field:add", field);
+    this._resyncFieldTemplateRelationships(field.id);
     return field;
   }
 
@@ -143,15 +184,126 @@ export class TreeModel {
     if (!field) return;
     Object.assign(field, patch);
     this._emit("field:update", field);
+    this._resyncFieldTemplateRelationships(id);
   }
 
   removeField(id) {
     if (!this.fields.delete(id)) return;
     // 이 필드의 슬롯에 꽂혀 있던 인물들은 자유로운 인물로 되돌아간다(정보는 그대로 유지).
+    // 이미 실제 관계선이 됐던 것(materializedRelIds)은 필드가 없어져도 건드리지 않는다 —
+    // "필드를 지워도 안의 인물/관계는 남는다"는 삭제 확인 문구와 같은 원칙.
     for (const p of this.people.values()) {
       if (p.slotOf?.fieldId === id) p.slotOf = null;
     }
     this._emit("field:remove", id);
+  }
+
+  /** 템플릿 자리(슬롯) 하나를 지운다 — 거기 꽂혀 있던 인물은 자유로워지고(정보 유지), 그 슬롯이
+   * 걸린 템플릿 관계는(실제 관계선이 돼 있었더라도) 함께 지운다(한쪽 끝이 사라졌으니). */
+  removeTemplateSlot(fieldId, slotId) {
+    const field = this.fields.get(fieldId);
+    if (!field) return;
+    const occupant = this.personInSlot(fieldId, slotId);
+    if (occupant) {
+      occupant.slotOf = null;
+      this._emit("person:update", occupant);
+    }
+    field.templateSlots = field.templateSlots.filter((s) => s.id !== slotId);
+    const remaining = [];
+    for (const tr of field.templateRelationships || []) {
+      if (tr.slotIds.includes(slotId)) {
+        for (const relId of tr.materializedRelIds) this.removeRelationship(relId);
+      } else {
+        remaining.push(tr);
+      }
+    }
+    field.templateRelationships = remaining;
+    this._emit("field:update", field);
+  }
+
+  /** 템플릿 관계(슬롯끼리 그은 안내선) 하나만 지운다 — 슬롯 자체는 그대로 둔다. */
+  removeTemplateRelationship(fieldId, trId) {
+    const field = this.fields.get(fieldId);
+    if (!field) return;
+    const tr = field.templateRelationships?.find((t) => t.id === trId);
+    if (!tr) return;
+    for (const relId of tr.materializedRelIds) this.removeRelationship(relId);
+    field.templateRelationships = field.templateRelationships.filter((t) => t.id !== trId);
+    this._emit("field:update", field);
+  }
+
+  /** 그 필드의 템플릿 관계 전부를 지금 슬롯 점유 상태에 맞춰 다시 맞춘다 — 양쪽(또는 세) 슬롯이
+   * 전부 채워져 있으면 실제 relationship을 만들고(이미 정확히 그 사람들로 만들어져 있으면
+   * 그대로 둠), 아니면(비었거나 다른 사람으로 바뀌었으면) 기존 걸 지우고 다시 안내선으로 되돌린다. */
+  _resyncFieldTemplateRelationships(fieldId) {
+    const field = this.fields.get(fieldId);
+    if (!field?.templateRelationships?.length) return;
+    for (const tr of field.templateRelationships) {
+      const occupants = tr.slotIds.map((slotId) => this.personInSlot(fieldId, slotId));
+      const allFilled = occupants.every(Boolean);
+      const occupantIds = allFilled ? occupants.map((p) => p.id) : null;
+      if (allFilled && this._materializedMatches(tr, occupantIds)) continue; // 이미 정확히 맞음
+      for (const relId of tr.materializedRelIds) this.removeRelationship(relId);
+      tr.materializedRelIds = allFilled ? this._materializeTemplateRelationship(tr, occupantIds) : [];
+    }
+    // materializedRelIds 자체는 안 바뀌었어도(예: 한쪽 슬롯만 막 채워져 아직 불완전한 경우)
+    // 안내선이 이제 그 슬롯이 아니라 새로 들어온 인물의 위치를 따라가야 하므로, 렌더러가
+    // 안내선 좌표를 다시 그리도록 항상 한 번 더 알려준다(TreeRenderer._syncTemplateRelLines).
+    this._emit("field:update", field);
+  }
+
+  /** tr.materializedRelIds가 지금 occupantIds(빠짐없이 채워졌을 때의 슬롯 순서대로의 인물 id)와
+   * 정확히 같은 관계를 가리키고 있는지 확인한다 — 슬롯을 채운 사람이 안 바뀌었으면 관계선을
+   * 지웠다 새로 만들 필요 없이 그대로 둔다(불필요한 깜빡임/undo 스택 잡음 방지). */
+  _materializedMatches(tr, occupantIds) {
+    if (!tr.materializedRelIds.length) return false;
+    if (tr.type === "parent-child") {
+      const [spouse, pc] = tr.materializedRelIds.map((id) => this.relationships.get(id));
+      if (!spouse || !pc) return false;
+      const [parent1, parent2, child] = occupantIds;
+      return (
+        ((spouse.fromId === parent1 && spouse.toId === parent2) || (spouse.fromId === parent2 && spouse.toId === parent1)) &&
+        pc.fromId === parent1 && pc.toId === child && pc.viaSpouseId === parent2
+      );
+    }
+    const rel = this.relationships.get(tr.materializedRelIds[0]);
+    if (!rel) return false;
+    const [a, b] = occupantIds;
+    if (rel.fromId === a && rel.toId === b) return true;
+    // 화살표는 방향이 의미 있으므로(누가 시작/끝인지) 순서가 바뀌면 다른 관계로 취급한다.
+    return tr.type !== "arrow" && rel.fromId === b && rel.toId === a;
+  }
+
+  /** occupantIds(슬롯 순서대로의 인물 id)로 tr.type에 맞는 실제 관계선을 만들고, 만들어진
+   * relationship id들을 반환한다(나중에 슬롯이 비면 이 id들을 지운다). 이미 두 사람 사이에
+   * (템플릿과 무관하게) 관계선이 있었다면 addRelationship이 조용히 무시(null)하므로, 그 경우엔
+   * 이 템플릿이 "소유"하는 관계선이 없는 셈 치고 건드리지 않는다(나중에 슬롯을 빼도 그 원래
+   * 관계선은 안 지워짐). */
+  _materializeTemplateRelationship(tr, occupantIds) {
+    const created = [];
+    if (tr.type === "parent-child") {
+      const [parent1, parent2, child] = occupantIds;
+      const spouseRel = this.addRelationship({ fromId: parent1, toId: parent2, type: "spouse" });
+      if (spouseRel) created.push(spouseRel.id);
+      const pcRel = this.addRelationship({ fromId: parent1, toId: child, type: "parent-child", viaSpouseId: parent2 });
+      if (pcRel) created.push(pcRel.id);
+    } else if (tr.type === "parent-child-solo") {
+      const [parent, child] = occupantIds;
+      const rel = this.addRelationship({ fromId: parent, toId: child, type: "parent-child-solo" });
+      if (rel) created.push(rel.id);
+    } else {
+      const [a, b] = occupantIds;
+      const rel = this.addRelationship({ fromId: a, toId: b, type: tr.type });
+      if (rel) created.push(rel.id);
+    }
+    // 템플릿에 저장해둔 라벨/색/선 종류/양방향 등 커스텀 값은, 실질적인 마지막 관계선
+    // (부모-자식(부모2)면 부모-자식 쪽)에 마저 입힌다.
+    if (created.length && (tr.label || tr.color || tr.lineStyle || tr.bidirectional)) {
+      this.updateRelationship(created[created.length - 1], {
+        label: tr.label, color: tr.color, lineStyle: tr.lineStyle, bidirectional: tr.bidirectional,
+      });
+    }
+    return created;
   }
 
   getBounds() {

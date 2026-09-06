@@ -665,9 +665,48 @@ html, body {
   opacity: 0.5;
 }
 
+/* 템플릿 슬롯끼리 그은 "관계" 안내선 — .field-content/.field-slot과 같은 원점(필드 왼쪽 위
+   모서리)을 쓰는 SVG. 필드 자신의 드래그 대상에서 빠지도록(FieldBox.attachFieldDrag의 filter)
+   .field-slot과 같은 취급을 받는다. */
+.field-rel-lines {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none; /* 각 안내선(.field-rel-line)만 개별적으로 클릭 가능하게 켠다 */
+}
+
+.field-rel-line-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16px;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.field-rel-line-visible {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2px;
+  stroke-dasharray: 6 5;
+  pointer-events: none;
+}
+
+.field-rel-line:hover .field-rel-line-visible {
+  stroke: var(--accent);
+}
+
 .field-slot:hover {
   border-color: var(--accent);
   opacity: 1;
+}
+
+/* "&관계" 연결 모드로 슬롯끼리 순서대로 고르는 동안 — 인물 카드의 .selected와 같은 강조. */
+.field-slot.picked {
+  border-color: var(--accent);
+  border-style: solid;
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--accent), 0 2px 12px var(--accent-glow);
 }
 
 /* ---------- Relationship lines (SVG) ---------- */

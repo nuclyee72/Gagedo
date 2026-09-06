@@ -53,7 +53,10 @@ const camera = new Camera(viewportEl, stageEl, {
 
 let connectMode = false;
 let connectType = null; // 연결 모드에서 미리 골라둔 관계 유형
-let connectPicks = []; // 지금까지 순서대로 고른 인물 id들
+let connectPicks = []; // 지금까지 순서대로 고른 인물 id들(또는 슬롯 id들 — 아래 참고)
+// 연결 모드 중 첫 클릭이 "인물"이 아니라 "템플릿 슬롯"이면, 그 시퀀스 전체를 템플릿 관계
+// 만들기로 취급한다(사람과 슬롯을 섞어 고르는 건 지원하지 않음) — 그 대상 필드 id.
+let connectTemplateFieldId = null;
 
 const CONNECT_TYPE_NAMES = {
   "parent-child-solo": "부모-자식(부모1)",
@@ -84,6 +87,7 @@ renderer = new TreeRenderer({
   onLineClick: handleLineClick,
   onTextBoxClick: handleTextBoxClick,
   onFieldClick: handleFieldClick,
+  onSlotClick: handleSlotClickForConnect,
   trashEl,
 });
 
@@ -124,6 +128,7 @@ const toolbar = new Toolbar(toolbarEl, {
     connectType = type;
     connectMode = true;
     connectPicks = [];
+    connectTemplateFieldId = null; // 새 시퀀스 시작 — 사람/슬롯 어느 쪽으로도 아직 안 정해짐
     toolbar.setConnectMode(true, connectStatusText());
     viewportEl.classList.add("connect-mode");
     renderer.clearMultiSelection();
@@ -365,6 +370,9 @@ camera.onPinchStart = () => backgroundDrag.cancelDrag();
 
 function handleCardClick(id) {
   if (connectMode) {
+    // 이번 연결 시퀀스가 이미 "템플릿 슬롯끼리 잇기"로 시작됐으면(첫 클릭이 슬롯), 사람과
+    // 슬롯을 섞어 고르는 걸 지원하지 않으므로 사람 클릭은 무시한다.
+    if (connectTemplateFieldId) return;
     const idx = connectPicks.indexOf(id);
     if (idx !== -1) {
       // 이미 고른 사람을 다시 클릭하면 그 선택만 취소한다(순서 중 아무 단계에서나 되돌릴 수 있게).
@@ -490,7 +498,13 @@ function copySelectionToClipboard() {
     textBoxes: textBoxIds.map((id) => ({ ...tree.textBoxes.get(id) })),
     fields: fieldIds.map((id) => {
       const f = tree.fields.get(id);
-      return { ...f, templateSlots: f.templateSlots.map((s) => ({ ...s })) };
+      return {
+        ...f,
+        templateSlots: f.templateSlots.map((s) => ({ ...s })),
+        templateRelationships: (f.templateRelationships || []).map((tr) => ({
+          ...tr, slotIds: [...tr.slotIds], materializedRelIds: [...(tr.materializedRelIds || [])],
+        })),
+      };
     }),
     relationships,
   };
@@ -545,9 +559,18 @@ function pasteClipboard() {
       slotIdMap.set(s.id, newSlot.id);
       return newSlot;
     });
+    // 템플릿 관계(슬롯끼리 그은 안내선)도 슬롯 id를 새 것으로 다시 연결해 그대로 복제한다 —
+    // materializedRelIds는 비워서 새로 붙여넣는다(아래에서 인물 slotOf를 다시 연결하면 tree가
+    // 알아서 다시 진짜 관계선으로 성사시켜준다).
+    const newTemplateRelationships = (f.templateRelationships || []).map((tr) => ({
+      id: uuid(), type: tr.type, slotIds: tr.slotIds.map((sid) => slotIdMap.get(sid)),
+      label: tr.label, color: tr.color, lineStyle: tr.lineStyle, bidirectional: tr.bidirectional,
+      materializedRelIds: [],
+    }));
     const created = tree.addField({
       x: f.x + dx, y: f.y + dy, width: f.width, height: f.height,
-      locked: f.locked, selfLocked: f.selfLocked, templateMode: f.templateMode, templateSlots: newSlots,
+      locked: f.locked, selfLocked: f.selfLocked, templateMode: f.templateMode,
+      templateSlots: newSlots, templateRelationships: newTemplateRelationships,
     });
     fieldIdMap.set(f.id, created.id);
     newFieldIds.push(created.id);
@@ -631,6 +654,44 @@ function connectStatusText() {
   return hint ? `${base} · ${hint}` : base;
 }
 
+/**
+ * "&관계" 연결 모드 중 템플릿 슬롯을 클릭했을 때(TreeRenderer가 onSlotClick으로 물어봄) —
+ * connectMode가 꺼져 있으면 false를 돌려줘 평소 동작(삭제/사이드바 열기)을 그대로 쓰게 한다.
+ * true를 돌려주면 이번 클릭은 "슬롯 고르기"로 소비된 것이니 TreeRenderer가 더 이상 아무것도
+ * 안 한다.
+ */
+function handleSlotClickForConnect(fieldId, slotId) {
+  if (!connectMode) return false;
+  if (connectTemplateFieldId && connectTemplateFieldId !== fieldId) return true; // 다른 필드 슬롯은 무시(소비만 함)
+  if (!connectTemplateFieldId) connectTemplateFieldId = fieldId; // 이번 시퀀스는 슬롯끼리 잇기로 확정
+  const idx = connectPicks.indexOf(slotId);
+  if (idx !== -1) connectPicks.splice(idx, 1);
+  else connectPicks.push(slotId);
+  renderer.setSelectedSlots(fieldId, connectPicks);
+
+  const required = (CONNECT_STEP_HINTS[connectType] || []).length || 2;
+  if (connectPicks.length >= required) {
+    finalizeTemplateConnection(connectType, fieldId, connectPicks);
+    exitConnectMode();
+    return true;
+  }
+  toolbar.setConnectMode(true, connectStatusText());
+  return true;
+}
+
+/** 유형별로 고른 슬롯 순서를 그 필드의 "템플릿 관계"(안내선)로 저장한다 — 양쪽(또는 세) 슬롯이
+ * 이미 실제 인물로 채워져 있으면 tree.addField 내부(Tree._resyncFieldTemplateRelationships)가
+ * 곧바로 진짜 관계선까지 만들어준다. */
+function finalizeTemplateConnection(type, fieldId, slotIds) {
+  const field = tree.fields.get(fieldId);
+  if (!field) return;
+  const newTr = {
+    id: uuid(), type, slotIds: [...slotIds], label: "", color: null, lineStyle: null,
+    bidirectional: false, materializedRelIds: [],
+  };
+  tree.updateField(fieldId, { templateRelationships: [...(field.templateRelationships || []), newTr] });
+}
+
 /** 인물 카드/텍스트 박스와 똑같이, 관계선을 클릭하면 오른쪽 사이드바를 띄워 라벨/색/선 종류를 고치게 한다. */
 function handleLineClick(relId) {
   const rel = tree.relationships.get(relId);
@@ -651,6 +712,8 @@ function exitConnectMode() {
   toolbar.setConnectMode(false);
   viewportEl.classList.remove("connect-mode");
   renderer.setSelectedMany([]);
+  if (connectTemplateFieldId) renderer.setSelectedSlots(connectTemplateFieldId, []);
+  connectTemplateFieldId = null;
 }
 
 async function doExport() {

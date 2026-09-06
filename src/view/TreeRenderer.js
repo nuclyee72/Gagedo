@@ -1,7 +1,10 @@
 import { createCardElement, applyCardData, attachCardDrag } from "../ui/PersonCard.js";
 import { createLineElement, applyLineStyle, updateLinePosition, TYPE_LABEL } from "../ui/RelationshipLine.js";
 import { createTextBoxElement, applyTextBoxData, attachTextBoxDrag, attachTextBoxResize } from "../ui/TextBox.js";
-import { createFieldElement, applyFieldData, attachFieldDrag, attachFieldResize, createSlotElement, applySlotPosition, attachSlotDrag } from "../ui/FieldBox.js";
+import {
+  createFieldElement, applyFieldData, attachFieldDrag, attachFieldResize, createSlotElement,
+  applySlotPosition, attachSlotDrag, createTemplateRelLineElement, applyTemplateRelLineData,
+} from "../ui/FieldBox.js";
 import { ROW_SPACING, COL_SPACING } from "../core/AutoLayout.js";
 import { uuid } from "../utils/uuid.js";
 
@@ -27,7 +30,7 @@ const LINE_HIT_TARGET_SCREEN_PX = 16; // 보이지 않는 클릭 판정 폭도 �
 
 /** TreeModel의 변화를 구독해 사람 카드(DOM)와 관계선(SVG)을 동기화한다. */
 export class TreeRenderer {
-  constructor({ tree, worldEl, linesEl, fieldsEl, camera, store, onCardClick, onLineClick, onTextBoxClick, onFieldClick, trashEl }) {
+  constructor({ tree, worldEl, linesEl, fieldsEl, camera, store, onCardClick, onLineClick, onTextBoxClick, onFieldClick, onSlotClick, trashEl }) {
     this.tree = tree;
     this.worldEl = worldEl;
     this.linesEl = linesEl;
@@ -38,6 +41,9 @@ export class TreeRenderer {
     this.onLineClick = onLineClick;
     this.onTextBoxClick = onTextBoxClick;
     this.onFieldClick = onFieldClick;
+    // "&관계" 연결 모드 중 슬롯 클릭을 가로챌지 여부 — main.js가 판단해 true(처리함)/false(평소
+    // 대로 삭제·사이드바 열기)를 돌려준다.
+    this.onSlotClick = onSlotClick;
     this.trashEl = trashEl;
 
     this.cardEls = new Map();
@@ -206,6 +212,17 @@ export class TreeRenderer {
   setSelectedMany(ids) {
     const set = new Set(ids);
     for (const [pid, el] of this.cardEls) el.classList.toggle("selected", set.has(pid));
+  }
+
+  /** setSelectedMany의 슬롯 버전 — "&관계" 연결 모드로 템플릿 슬롯끼리 순서대로 고르는 동안
+   * 지금까지 고른 슬롯들을 강조한다(fieldId로 다른 필드 슬롯과 안 헷갈리게 한정). */
+  setSelectedSlots(fieldId, slotIds) {
+    const set = new Set(slotIds);
+    for (const [fid, el] of this.fieldEls) {
+      for (const slotEl of el.querySelectorAll(".field-slot")) {
+        slotEl.classList.toggle("picked", fid === fieldId && set.has(slotEl.dataset.slotId));
+      }
+    }
   }
 
   /** 사람 카드의 setSelected와 같은 역할 — 텍스트 박스 쪽 선택 강조(사이드바가 열려 있는 대상). */
@@ -670,6 +687,7 @@ export class TreeRenderer {
   _addField(field) {
     const el = createFieldElement(field);
     this._syncFieldSlots(field, el);
+    this._syncTemplateRelLines(field, el);
 
     const moveDrag = attachFieldDrag(el, {
       getScale: () => this.camera.scale,
@@ -795,11 +813,14 @@ export class TreeRenderer {
         this.tree.updateField(fieldId, { templateSlots });
       },
       onClick: () => {
+        // "&관계" 연결 모드 중이면(main.js) 클릭을 슬롯 고르기로 먼저 넘긴다 — 처리했다고
+        // (true) 답하면 여기서 끝, 평소의 삭제/사이드바 열기 동작은 건너뛴다.
+        if (this.onSlotClick && this.onSlotClick(fieldId, slotId)) return;
         const field = this.tree.fields.get(fieldId);
         if (!field) return;
         if (field.templateMode) {
-          if (confirm("이 템플릿 자리를 삭제할까요?")) {
-            this.tree.updateField(fieldId, { templateSlots: field.templateSlots.filter((s) => s.id !== slotId) });
+          if (confirm("이 템플릿 자리를 삭제할까요? 여기 걸린 템플릿 관계도 함께 지워집니다.")) {
+            this.tree.removeTemplateSlot(fieldId, slotId);
           }
         } else {
           this.onFieldClick && this.onFieldClick(fieldId);
@@ -807,6 +828,44 @@ export class TreeRenderer {
       },
     });
     this.slotDrags.set(slotId, drag);
+  }
+
+  /** field.templateRelationships 배열을 실제 SVG(.field-rel-line)와 맞춘다 — 슬롯 위치나
+   * 점유 상태(인물이 꽂히거나 빠짐)가 바뀔 때마다 field:update로 다시 불린다
+   * (Tree.js._resyncFieldTemplateRelationships 참고). */
+  _syncTemplateRelLines(field, el) {
+    const svg = el.querySelector(".field-rel-lines");
+    const trs = field.templateRelationships || [];
+    const wantedIds = new Set(trs.map((tr) => tr.id));
+    for (const lineEl of svg.querySelectorAll(".field-rel-line")) {
+      if (!wantedIds.has(lineEl.dataset.trId)) lineEl.remove();
+    }
+    for (const tr of trs) {
+      let lineEl = svg.querySelector(`.field-rel-line[data-tr-id="${tr.id}"]`);
+      if (!lineEl) {
+        lineEl = createTemplateRelLineElement(tr);
+        lineEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const liveField = this.tree.fields.get(field.id);
+          if (!liveField) return;
+          if (liveField.templateMode) {
+            if (confirm("이 템플릿 관계를 삭제할까요?")) this.tree.removeTemplateRelationship(field.id, tr.id);
+          } else {
+            this.onFieldClick && this.onFieldClick(field.id);
+          }
+        });
+        svg.appendChild(lineEl);
+      }
+      // 슬롯이 비어 있으면 그 슬롯의 점선 위치를, 채워져 있으면 지금 그 자리를 차지한 인물의
+      // (필드 기준 상대) 위치를 잇는다 — "안내선이지만 사람이 채워지면 그 사람을 따라간다".
+      const points = tr.slotIds.map((slotId) => {
+        const occupant = this._personInSlot(field.id, slotId);
+        if (occupant) return { x: occupant.x - field.x, y: occupant.y - field.y };
+        const slot = field.templateSlots.find((s) => s.id === slotId);
+        return slot ? { x: slot.relX, y: slot.relY } : { x: 0, y: 0 };
+      });
+      applyTemplateRelLineData(lineEl, points, (tr.materializedRelIds || []).length > 0);
+    }
   }
 
   /** field의 사각형 안에 "올라가 있는" 인물/텍스트박스 id 목록 — 각자의 기준점(인물은 사진 원
@@ -1118,12 +1177,10 @@ export class TreeRenderer {
     return best;
   }
 
-  /** 주어진 필드의 그 슬롯을 지금 차지하고 있는 인물(없으면 null). */
+  /** 주어진 필드의 그 슬롯을 지금 차지하고 있는 인물(없으면 null). 모델 쪽 로직(Tree.js의
+   * personInSlot — 템플릿 관계 자동 성사/해제에도 같이 쓰임)에 그대로 위임한다. */
   _personInSlot(fieldId, slotId) {
-    for (const p of this.tree.people.values()) {
-      if (p.slotOf?.fieldId === fieldId && p.slotOf?.slotId === slotId) return p;
-    }
-    return null;
+    return this.tree.personInSlot(fieldId, slotId);
   }
 
   /**
@@ -1731,6 +1788,7 @@ export class TreeRenderer {
         if (el) {
           applyFieldData(el, payload);
           this._syncFieldSlots(payload, el);
+          this._syncTemplateRelLines(payload, el);
         }
         break;
       }

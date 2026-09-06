@@ -1,5 +1,7 @@
 import { DragController } from "../view/DragController.js";
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
 /**
  * "필드" — 인물/텍스트박스를 하나로 묶어서 옮기는 완전히 빈 컨테이너 + 템플릿 자리(점선).
  * 생김새는 텍스트박스와 같은 둥근 사각형 카드(TextBox.js와 같은 패턴)지만 텍스트는 없다.
@@ -10,6 +12,7 @@ export function createFieldElement(field) {
   el.dataset.id = field.id;
   el.innerHTML = `
     <div class="field-content"></div>
+    <svg class="field-rel-lines" aria-hidden="true"></svg>
     <div class="field-resize" title="드래그해서 필드 크기 조절" aria-hidden="true"></div>
   `;
   applyFieldData(el, field);
@@ -23,6 +26,11 @@ export function applyFieldData(el, field) {
   const content = el.querySelector(".field-content");
   content.style.width = `${field.width}px`;
   content.style.height = `${field.height}px`;
+  // 템플릿 관계 안내선용 SVG도 .field-content와 정확히 같은 크기·원점(필드 왼쪽 위 모서리
+  // 기준)으로 맞춰서, 슬롯의 relX/relY 좌표를 그대로 SVG 좌표로 써도 겹치게 한다.
+  const relLines = el.querySelector(".field-rel-lines");
+  relLines.setAttribute("width", field.width);
+  relLines.setAttribute("height", field.height);
   el.classList.toggle("template-editing", !!field.templateMode);
 }
 
@@ -33,7 +41,8 @@ export function applyFieldData(el, field) {
  */
 export function attachFieldDrag(el, { getScale, onDragStart, onMove, onMoveEnd, onClick }) {
   return new DragController(el, {
-    filter: (e) => !e.target.closest(".field-resize") && !e.target.closest(".field-slot"),
+    filter: (e) =>
+      !e.target.closest(".field-resize") && !e.target.closest(".field-slot") && !e.target.closest(".field-rel-line"),
     onDragStart: () => onDragStart && onDragStart(),
     onDragMove: (dx, dy, e) => onMove(dx / getScale(), dy / getScale(), e),
     onDragEnd: (e) => onMoveEnd && onMoveEnd(e),
@@ -77,4 +86,33 @@ export function attachSlotDrag(el, { getScale, onDragStart, onDragMove, onDragEn
     onDragEnd: () => onDragEnd && onDragEnd(),
     onClick: (e) => onClick && onClick(e),
   });
+}
+
+/**
+ * 템플릿 슬롯끼리 그어둔 "관계" 안내선 하나(.field-rel-lines 안에 들어감). 실제 인물 관계선
+ * (RelationshipLine.js)처럼 화살촉·라벨까지 갖추지는 않는 단순한 점선 스캐폴드다 — 양쪽 슬롯이
+ * 실제 인물로 다 채워지면(materializedRelIds가 생기면) 진짜 관계선(#lines-layer)이 그 자리를
+ * 대신 보여주므로 이 안내선은 숨긴다(applyTemplateRelLineData가 처리).
+ * 보이는 얇은 선(.field-rel-line-visible) + 클릭하기 쉬운 두꺼운 투명 선(.field-rel-line-hit)
+ * 두 겹으로 그린다(실제 관계선의 hit/visible 분리와 같은 이유).
+ */
+export function createTemplateRelLineElement(tr) {
+  const g = document.createElementNS(SVG_NS, "g");
+  g.classList.add("field-rel-line");
+  g.dataset.trId = tr.id;
+  const hit = document.createElementNS(SVG_NS, "polyline");
+  hit.classList.add("field-rel-line-hit");
+  const visible = document.createElementNS(SVG_NS, "polyline");
+  visible.classList.add("field-rel-line-visible");
+  g.append(hit, visible);
+  return g;
+}
+
+/** points: [{x,y}, ...] (필드 기준 상대좌표 — 슬롯 relX/relY 또는 그 슬롯을 채운 인물의
+ * 필드-상대 위치). materialized면 실제 관계선이 대신 보여주므로 이 안내선은 숨긴다. */
+export function applyTemplateRelLineData(g, points, materialized) {
+  g.style.display = materialized ? "none" : "";
+  if (materialized) return;
+  const pointStr = points.map((p) => `${p.x},${p.y}`).join(" ");
+  for (const el of g.querySelectorAll("polyline")) el.setAttribute("points", pointStr);
 }

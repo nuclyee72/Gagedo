@@ -783,8 +783,10 @@ export class TreeRenderer {
    * 아니면 필드 사이드바 열기)을 처리한다. field.templateMode는 드래그 시작 시점에 실시간으로
    * 확인한다(슬롯 엘리먼트를 새로 만들지 않고도 모드 토글에 바로 반응하도록). */
   _attachSlotDrag(fieldId, slotId, slotEl) {
-    let rawRelX = 0;
+    let rawRelX = 0; // 커서를 그대로 따라가는 누적값(스냅 미반영, 필드 기준 상대좌표)
     let rawRelY = 0;
+    let curRelX = 0; // 실제로 보여주는(스냅이 반영된) 값 — 드래그가 끝나면 이걸 커밋한다
+    let curRelY = 0;
     let editing = false; // 이번 드래그가 실제로 위치를 바꾸는 중인지(템플릿 수정 중일 때만)
     const drag = attachSlotDrag(slotEl, {
       getScale: () => this.camera.scale,
@@ -793,22 +795,35 @@ export class TreeRenderer {
         const slot = field?.templateSlots.find((s) => s.id === slotId);
         editing = !!(field?.templateMode && slot);
         if (!editing) return;
-        rawRelX = slot.relX;
-        rawRelY = slot.relY;
+        rawRelX = curRelX = slot.relX;
+        rawRelY = curRelY = slot.relY;
       },
       onDragMove: (dx, dy) => {
         if (!editing) return;
+        const field = this.tree.fields.get(fieldId);
+        if (!field) return;
         rawRelX += dx;
         rawRelY += dy;
-        applySlotPosition(slotEl, { relX: rawRelX, relY: rawRelY });
+        // "템플릿도 다른 인물들과 똑같이 클리핑되게" — 인물 카드와 같은 스냅(같은 행/열, 부모-
+        // 자식 트렁크, 표준 칸 간격)을 그대로 재사용한다. 필드 기준 상대좌표를 월드 좌표로 바꿔
+        // 계산한 뒤 다시 상대좌표로 되돌린다. 슬롯끼리 서로 "꽂히는" 건 의미가 없으므로(그건
+        // 실제 인물 전용) excludeIds에 빈 Set을 줘서 _computeSlotSnap 분기만 건너뛴다.
+        const snapped = this._computeSnap(field.x + rawRelX, field.y + rawRelY, { id: slotId }, new Set());
+        curRelX = snapped.x - field.x;
+        curRelY = snapped.y - field.y;
+        applySlotPosition(slotEl, { relX: curRelX, relY: curRelY });
+        this._setGuide("h", snapped.guideY);
+        this._setGuide("v", snapped.guideX);
+        this._setExtraGuides(snapped.extraGuides);
       },
       onDragEnd: () => {
         if (!editing) return;
         editing = false;
+        this._hideSnapGuides();
         const field = this.tree.fields.get(fieldId);
         if (!field) return;
         const templateSlots = field.templateSlots.map((s) =>
-          s.id === slotId ? { ...s, relX: rawRelX, relY: rawRelY } : s
+          s.id === slotId ? { ...s, relX: curRelX, relY: curRelY } : s
         );
         this.tree.updateField(fieldId, { templateSlots });
       },

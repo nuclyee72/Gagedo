@@ -804,11 +804,14 @@ export class TreeRenderer {
         if (!field) return;
         rawRelX += dx;
         rawRelY += dy;
-        // "템플릿도 다른 인물들과 똑같이 클리핑되게" — 인물 카드와 같은 스냅(같은 행/열, 부모-
-        // 자식 트렁크, 표준 칸 간격)을 그대로 재사용한다. 필드 기준 상대좌표를 월드 좌표로 바꿔
-        // 계산한 뒤 다시 상대좌표로 되돌린다. 슬롯끼리 서로 "꽂히는" 건 의미가 없으므로(그건
-        // 실제 인물 전용) excludeIds에 빈 Set을 줘서 _computeSlotSnap 분기만 건너뛴다.
-        const snapped = this._computeSnap(field.x + rawRelX, field.y + rawRelY, { id: slotId }, new Set());
+        // "템플릿도 다른 인물들과 똑같이 클리핑되게" + "템플릿끼리도 클리핑되게" — 인물 카드와
+        // 같은 스냅(같은 행/열, 부모-자식 트렁크, 표준 칸 간격)을 그대로 재사용하되, 다섯 번째
+        // 인자(alsoMatchSlotId)로 이 슬롯 자신의 id를 넘겨서 다른 모든 필드의 다른 슬롯들도
+        // 인물과 동등하게 같은 행/열·표준 칸 간격 후보에 포함시킨다. 필드 기준 상대좌표를 월드
+        // 좌표로 바꿔 계산한 뒤 다시 상대좌표로 되돌린다. 슬롯끼리 서로 "꽂히는"(2차원 정확히
+        // 겹치는) 건 의미가 없으므로(그건 실제 인물 전용) excludeIds에 빈 Set을 줘서
+        // _computeSlotSnap 분기만 건너뛴다.
+        const snapped = this._computeSnap(field.x + rawRelX, field.y + rawRelY, { id: slotId }, new Set(), slotId);
         curRelX = snapped.x - field.x;
         curRelY = snapped.y - field.y;
         applySlotPosition(slotEl, { relX: curRelX, relY: curRelY });
@@ -1070,7 +1073,14 @@ export class TreeRenderer {
    * 정확히 표준 간격만큼 떨어져 있는 경우가 흔하다) 커서를 어디로 옮기든 그 멤버 쪽으로만
    * 계속 "스냅된 것처럼" 보이고 정작 원하는 외부 기준(다른 가족/템플릿 칸)엔 안 붙는 문제가 있다.
    */
-  _computeSnap(rawX, rawY, person, excludeIds = null) {
+  /**
+   * alsoMatchSlotId: 슬롯을 드래그하는 중일 때만 그 슬롯 자신의 id를 넘긴다("템플릿끼리도
+   * 클리핑되게") — 이 값이 있으면 다른 모든 필드의 다른 슬롯들도 인물과 완전히 동등한 자격으로
+   * 같은 행/열·표준 칸 간격 후보에 포함시킨다(자기 자신은 제외). 인물을 드래그할 때는 이 값을
+   * 안 넘기므로(undefined) 기존 그대로 "인물끼리만" 비교한다 — 슬롯과 인물이 서로 다른 스냅
+   * 대상 풀을 쓰는 게 아니라, 슬롯 쪽만 "인물 풀 + 슬롯 풀"을 함께 보는 것으로 확장한 것.
+   */
+  _computeSnap(rawX, rawY, person, excludeIds = null, alsoMatchSlotId = undefined) {
     // 템플릿 슬롯 스냅이 있으면 그게 우선이다 — X/Y가 같이 딱 맞아야 "꽂혔다"는 느낌이 나므로
     // 축별(행/열/가족/템플릿 칸) 후보보다 먼저 2차원 거리로 검사한다. 그룹 드래그(여러 명을 한
     // 번에 옮기는 앵커)에는 적용하지 않는다 — excludeIds가 그 신호(그룹 드래그만 넘겨줌).
@@ -1103,6 +1113,15 @@ export class TreeRenderer {
       }
     }
 
+    if (alsoMatchSlotId !== undefined) {
+      for (const slot of this._slotAbsolutePositions(alsoMatchSlotId)) {
+        const dy = Math.abs(slot.y - rawY);
+        if (dy < bestYDist) { bestYDist = dy; bestY = slot.y; bestYAnchor = null; }
+        const dx = Math.abs(slot.x - rawX);
+        if (dx < bestXDist) { bestXDist = dx; bestX = slot.x; bestXAnchor = null; }
+      }
+    }
+
     // "부모-자식(부모2)"의 자식이면, 부모 쌍을 기준으로 한 중심/n등분 후보도 함께 검사한다.
     const family = this._familySnapCandidates(person, excludeIds);
     if (family) {
@@ -1125,8 +1144,9 @@ export class TreeRenderer {
       }
     }
 
-    // 템플릿 간격(표준 칸 간격) 스냅은 특정 관계와 상관없이 "모든 인물" 기준으로 검사한다.
-    const template = this._templateSnapCandidates(person, excludeIds);
+    // 템플릿 간격(표준 칸 간격) 스냅은 특정 관계와 상관없이 "모든 인물"(+슬롯 드래그 중이면
+    // 다른 슬롯들도) 기준으로 검사한다.
+    const template = this._templateSnapCandidates(person, excludeIds, alsoMatchSlotId);
     for (const c of template.xCandidates) {
       const dx = Math.abs(c.x - rawX);
       if (dx < bestXDist) {
@@ -1282,9 +1302,10 @@ export class TreeRenderer {
    * "템플릿 거리" 스냅 — 관계와 상관없이 "모든 인물" 기준으로, 드래그 중인 카드가 다른 어떤 사람
    * 으로부터 자동 정렬과 같은 표준 간격(COL_SPACING 가로 / ROW_SPACING 세로)만큼 떨어진 자리에
    * 오면 달라붙는다. 어느 사람 기준으로 붙었는지 점선으로 보여줄 수 있도록 anchor(그 사람의 좌표)
-   * 도 함께 반환한다.
+   * 도 함께 반환한다. alsoMatchSlotId가 있으면(슬롯을 드래그하는 중) 다른 슬롯들도 같은 자격으로
+   * 후보에 더한다("템플릿끼리도 클리핑").
    */
-  _templateSnapCandidates(person, excludeIds = null) {
+  _templateSnapCandidates(person, excludeIds = null, alsoMatchSlotId = undefined) {
     const xCandidates = [];
     const yCandidates = [];
     for (const other of this.tree.people.values()) {
@@ -1295,7 +1316,30 @@ export class TreeRenderer {
       yCandidates.push({ y: other.y + ROW_SPACING, anchor });
       yCandidates.push({ y: other.y - ROW_SPACING, anchor });
     }
+    if (alsoMatchSlotId !== undefined) {
+      for (const slot of this._slotAbsolutePositions(alsoMatchSlotId)) {
+        const anchor = { x: slot.x, y: slot.y };
+        xCandidates.push({ x: slot.x + COL_SPACING, anchor });
+        xCandidates.push({ x: slot.x - COL_SPACING, anchor });
+        yCandidates.push({ y: slot.y + ROW_SPACING, anchor });
+        yCandidates.push({ y: slot.y - ROW_SPACING, anchor });
+      }
+    }
     return { xCandidates, yCandidates };
+  }
+
+  /** 모든 필드의 모든 템플릿 슬롯을 절대(월드) 좌표로 나열한다(excludeSlotId 자신은 뺌) —
+   * 슬롯을 드래그할 때 "다른 슬롯"도 인물과 동등하게 같은 행/열·표준 칸 간격 스냅 후보로
+   * 쓰기 위한 것("템플릿끼리도 클리핑되게"). */
+  _slotAbsolutePositions(excludeSlotId) {
+    const list = [];
+    for (const field of this.tree.fields.values()) {
+      for (const slot of field.templateSlots) {
+        if (slot.id === excludeSlotId) continue;
+        list.push({ id: slot.id, x: field.x + slot.relX, y: field.y + slot.relY });
+      }
+    }
+    return list;
   }
 
   /**

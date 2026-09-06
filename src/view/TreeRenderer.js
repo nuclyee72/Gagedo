@@ -1,7 +1,7 @@
 import { createCardElement, applyCardData, attachCardDrag } from "../ui/PersonCard.js";
 import { createLineElement, applyLineStyle, updateLinePosition, TYPE_LABEL } from "../ui/RelationshipLine.js";
 import { createTextBoxElement, applyTextBoxData, attachTextBoxDrag, attachTextBoxResize } from "../ui/TextBox.js";
-import { createFieldElement, applyFieldData, attachFieldDrag, attachFieldResize, createSlotElement, applySlotPosition } from "../ui/FieldBox.js";
+import { createFieldElement, applyFieldData, attachFieldDrag, attachFieldResize, createSlotElement, applySlotPosition, attachSlotDrag } from "../ui/FieldBox.js";
 import { ROW_SPACING, COL_SPACING } from "../core/AutoLayout.js";
 import { uuid } from "../utils/uuid.js";
 
@@ -50,6 +50,7 @@ export class TreeRenderer {
 
     this.fieldEls = new Map();
     this.fieldDrags = new Map(); // fieldId -> { moveDrag, resizeDrag }
+    this.slotDrags = new Map(); // slotId -> DragController (템플릿 자리 하나하나의 드래그/클릭)
     this._fieldDragState = null; // 필드 자신의 드래그(그 위 오브젝트를 기하학적으로 쓸어담아 함께 이동) 중일 때만 값이 있음
 
     // 마키(배경 Shift+드래그)로 한 번에 여러 개를 고른 상태 — 사이드바를 여는 단일 선택과는 별개다.
@@ -164,6 +165,7 @@ export class TreeRenderer {
     for (const drag of this.cardDrags.values()) drag.destroy();
     for (const drags of this.textBoxDrags.values()) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); }
     for (const drags of this.fieldDrags.values()) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); }
+    for (const drag of this.slotDrags.values()) drag.destroy();
     this.worldEl.innerHTML = "";
     this.linesEl.innerHTML = "";
     this.fieldsEl.innerHTML = "";
@@ -174,6 +176,7 @@ export class TreeRenderer {
     this.textBoxDrags.clear();
     this.fieldEls.clear();
     this.fieldDrags.clear();
+    this.slotDrags.clear();
     // linesEl을 통째로 비웠으니, 스냅 가이드 엘리먼트도 DOM에서 떨어져 나갔다 — 참조를 들고 있으면
     // 다음 번엔 그 죽은 엘리먼트에다 속성만 바꾸고 화면엔 안 나타나는 버그가 생기므로 같이 지운다.
     this._snapGuideH = null;
@@ -249,11 +252,13 @@ export class TreeRenderer {
     return this.multiSelected.people.size + this.multiSelected.textBoxes.size + this.multiSelected.fields.size;
   }
 
-  /** 지금 마키로 골라둔 대상들(잠긴 것도 포함) 전체를 한 번에 잠그거나 푼다. */
+  /** 지금 마키로 골라둔 대상들(잠긴 것도 포함) 전체를 한 번에 잠그거나 푼다. 필드는 person.locked/
+   * box.locked와 뜻이 정확히 대응하는 selfLocked(필드 "자신"의 위치 잠금)를 쓴다 — field.locked
+   * (내용물 잠금)는 사이드바의 "포함된 인물 잠금" 전용 토글로만 다룬다. */
   setLockedForSelection(locked) {
     for (const id of this.multiSelected.people) this.tree.updatePerson(id, { locked });
     for (const id of this.multiSelected.textBoxes) this.tree.updateTextBox(id, { locked });
-    for (const id of this.multiSelected.fields) this.tree.updateField(id, { locked });
+    for (const id of this.multiSelected.fields) this.tree.updateField(id, { selfLocked: locked });
   }
 
   /** 지금 마키로 골라둔 대상 중 잠기지 않은 것이 하나라도 있으면 false(= "아직 안 잠김" 상태로
@@ -266,7 +271,7 @@ export class TreeRenderer {
       if (!this.tree.textBoxes.get(id)?.locked) return false;
     }
     for (const id of this.multiSelected.fields) {
-      if (!this.tree.fields.get(id)?.locked) return false;
+      if (!this.tree.fields.get(id)?.selfLocked) return false;
     }
     return this.getMultiSelectionCount() > 0;
   }
@@ -298,9 +303,11 @@ export class TreeRenderer {
       if (!f) continue;
       // 마키로 여럿과 함께 골라 그룹으로 끌 때는(필드 혼자 끌 때의 전용 _beginFieldDrag와 달리)
       // 필드 위 오브젝트를 기하학적으로 쓸어담지 않는다 — 그건 별도로 같이 선택되어 있어야 한다.
-      // field.locked는 person.locked/box.locked와 다른 개념(그 필드 "위 오브젝트"의 개별 드래그만
-      // 막는 것)이라, 필드 자신은 잠겨 있어도 항상 움직인다 — lockedEls에 넣지 않는다.
-      positions.set(id, { x: f.x, y: f.y, type: "field" });
+      // field.locked(내용물 잠금)는 person.locked/box.locked와 다른 개념(그 필드 "위 오브젝트"의
+      // 개별 드래그만 막는 것)이라 이걸로는 안 걸러진다 — 대신 person.locked와 정확히 대응하는
+      // field.selfLocked(필드 "자신"의 위치 잠금)로 걸러낸다.
+      if (f.selfLocked) lockedEls.push(this.fieldEls.get(id));
+      else positions.set(id, { x: f.x, y: f.y, type: "field" });
     }
     // 잠겨서 이번엔 안 움직이는 대상은 드래그가 진행되는 동안만 흐리게 + 자물쇠 표시를 띄워서
     // "왜 이것만 안 따라오지?"를 바로 알 수 있게 한다 — 드래그가 끝나면 원래대로 되돌린다.
@@ -583,6 +590,7 @@ export class TreeRenderer {
           box.y = snapped.y;
           this._setGuide("h", snapped.guideY);
           this._setGuide("v", snapped.guideX);
+          this._setExtraGuides(snapped.extraGuides);
           el.style.left = `${box.x}px`;
           el.style.top = `${box.y}px`;
         }
@@ -666,6 +674,9 @@ export class TreeRenderer {
     const moveDrag = attachFieldDrag(el, {
       getScale: () => this.camera.scale,
       onDragStart: () => {
+        // selfLocked(필드 "자신"의 위치 잠금)면 person.locked/box.locked와 똑같이 드래그 자체를
+        // 시작하지 않는다 — field.locked(내용물 잠금)와는 별개라 이 체크와 무관하게 적용된다.
+        if (field.selfLocked) return;
         if (this.multiSelected.fields.has(field.id) && this.getMultiSelectionCount() >= 2) {
           this._beginGroupDrag(field.id, "field");
         } else {
@@ -684,38 +695,7 @@ export class TreeRenderer {
         if (this._groupDragState) this._commitGroupDrag(droppedOnTrash);
         else if (this._fieldDragState) this._commitFieldDrag(droppedOnTrash);
       },
-      onClick: (e) => {
-        if (field.templateMode) {
-          // 템플릿 수정 중 빈 곳을 클릭하면 그 자리에 새 슬롯을 추가한다(슬롯 자체 클릭은
-          // 아래 별도 네이티브 리스너가 처리 — DragController 필터가 .field-slot을 제외해서
-          // 여기까지 안 옴).
-          const contentRect = el.querySelector(".field-content").getBoundingClientRect();
-          const relX = (e.clientX - contentRect.left) / this.camera.scale;
-          const relY = (e.clientY - contentRect.top) / this.camera.scale;
-          this.tree.updateField(field.id, {
-            templateSlots: [...field.templateSlots, { id: uuid(), relX, relY }],
-          });
-        } else {
-          this.onFieldClick && this.onFieldClick(field.id);
-        }
-      },
-    });
-
-    // 슬롯 전용 클릭 — DragController의 filter가 .field-slot 위 pointerdown 자체를 거르므로
-    // (필드 드래그/추가-클릭 대상에서 제외) 완전히 별도인 네이티브 클릭 리스너로 처리한다.
-    // 템플릿 수정 중이면 그 슬롯을 삭제(확인 후), 아니면 슬롯 위 클릭도 그냥 필드 사이드바를 연다.
-    el.addEventListener("click", (e) => {
-      const slotEl = e.target.closest(".field-slot");
-      if (!slotEl) return;
-      e.stopPropagation();
-      if (field.templateMode) {
-        if (confirm("이 템플릿 자리를 삭제할까요?")) {
-          const remaining = field.templateSlots.filter((s) => s.id !== slotEl.dataset.slotId);
-          this.tree.updateField(field.id, { templateSlots: remaining });
-        }
-      } else {
-        this.onFieldClick && this.onFieldClick(field.id);
-      }
+      onClick: () => this.onFieldClick && this.onFieldClick(field.id),
     });
 
     // 리사이즈는 텍스트박스와 같은 1:1 손잡이 방식이지만 정렬 스냅은 없다(v1 범위 축소 —
@@ -753,21 +733,80 @@ export class TreeRenderer {
     this.fieldDrags.set(field.id, { moveDrag, resizeDrag });
   }
 
-  /** field.templateSlots 배열을 실제 DOM(.field-slot)과 맞춘다 — 추가/삭제된 슬롯만 갱신. */
+  /** field.templateSlots 배열을 실제 DOM(.field-slot)과 맞춘다 — 추가/삭제된 슬롯만 갱신하고,
+   * 새로 생긴 슬롯엔 드래그/클릭 컨트롤러를 새로 붙이고 없어진 슬롯 것은 destroy()한다. */
   _syncFieldSlots(field, el) {
     const wantedIds = new Set(field.templateSlots.map((s) => s.id));
     for (const slotEl of el.querySelectorAll(".field-slot")) {
-      if (!wantedIds.has(slotEl.dataset.slotId)) slotEl.remove();
+      const slotId = slotEl.dataset.slotId;
+      if (!wantedIds.has(slotId)) {
+        this.slotDrags.get(slotId)?.destroy();
+        this.slotDrags.delete(slotId);
+        slotEl.remove();
+      }
     }
     for (const slot of field.templateSlots) {
       let slotEl = el.querySelector(`.field-slot[data-slot-id="${slot.id}"]`);
       if (!slotEl) {
         slotEl = createSlotElement(slot);
         el.appendChild(slotEl);
+        this._attachSlotDrag(field.id, slot.id, slotEl);
+      } else if (!this.slotDrags.has(slot.id)) {
+        // "잠깐 없어졌다가 다시 생김" 등의 이유로 컨트롤러가 없는 기존 엘리먼트라면 마저 붙인다.
+        this._attachSlotDrag(field.id, slot.id, slotEl);
+        applySlotPosition(slotEl, slot);
       } else {
         applySlotPosition(slotEl, slot);
       }
     }
+  }
+
+  /** 템플릿 자리(슬롯) 하나의 드래그(템플릿 수정 중 위치 재조정)와 클릭(템플릿 수정 중엔 삭제,
+   * 아니면 필드 사이드바 열기)을 처리한다. field.templateMode는 드래그 시작 시점에 실시간으로
+   * 확인한다(슬롯 엘리먼트를 새로 만들지 않고도 모드 토글에 바로 반응하도록). */
+  _attachSlotDrag(fieldId, slotId, slotEl) {
+    let rawRelX = 0;
+    let rawRelY = 0;
+    let editing = false; // 이번 드래그가 실제로 위치를 바꾸는 중인지(템플릿 수정 중일 때만)
+    const drag = attachSlotDrag(slotEl, {
+      getScale: () => this.camera.scale,
+      onDragStart: () => {
+        const field = this.tree.fields.get(fieldId);
+        const slot = field?.templateSlots.find((s) => s.id === slotId);
+        editing = !!(field?.templateMode && slot);
+        if (!editing) return;
+        rawRelX = slot.relX;
+        rawRelY = slot.relY;
+      },
+      onDragMove: (dx, dy) => {
+        if (!editing) return;
+        rawRelX += dx;
+        rawRelY += dy;
+        applySlotPosition(slotEl, { relX: rawRelX, relY: rawRelY });
+      },
+      onDragEnd: () => {
+        if (!editing) return;
+        editing = false;
+        const field = this.tree.fields.get(fieldId);
+        if (!field) return;
+        const templateSlots = field.templateSlots.map((s) =>
+          s.id === slotId ? { ...s, relX: rawRelX, relY: rawRelY } : s
+        );
+        this.tree.updateField(fieldId, { templateSlots });
+      },
+      onClick: () => {
+        const field = this.tree.fields.get(fieldId);
+        if (!field) return;
+        if (field.templateMode) {
+          if (confirm("이 템플릿 자리를 삭제할까요?")) {
+            this.tree.updateField(fieldId, { templateSlots: field.templateSlots.filter((s) => s.id !== slotId) });
+          }
+        } else {
+          this.onFieldClick && this.onFieldClick(fieldId);
+        }
+      },
+    });
+    this.slotDrags.set(slotId, drag);
   }
 
   /** field의 사각형 안에 "올라가 있는" 인물/텍스트박스 id 목록 — 각자의 기준점(인물은 사진 원
@@ -1193,6 +1232,11 @@ export class TreeRenderer {
    * 사람 카드는 중심점 하나로 취급해 스냅했지만, 텍스트 박스는 실제 폭/높이가 있는 사각형이라
    * 가장자리·중간선까지 비교해야 "정렬"이라는 느낌이 난다(왼쪽↔오른쪽처럼 서로 다른 종류를
    * 엇갈려 맞추는 건 지금은 안 함 — 헷갈릴 수 있어서 같은 종류끼리만).
+   * 그와 별개로, 인물 카드의 _templateSnapCandidates와 같은 원칙("일정 거리" 스냅 — 정렬과
+   * 무관하게 그냥 표준 간격만큼 떨어진 자리에도 붙음)도 중심점 기준으로 검사한다 — 인물과 같은
+   * COL_SPACING/ROW_SPACING 단위를 그대로 써서, 텍스트박스를 인물 옆에 나란히 둬도 같은 격자에
+   * 놓이게 한다. 이쪽은 "어느 상대 기준으로 붙었는지" anchor를 같이 반환해 ㄱ자 꺾은선으로
+   * 보여준다(_computeSnap의 family/template 후보와 같은 방식).
    * excludeIds: 그룹 드래그 중인 다른 멤버(계속 상대 위치가 고정이라 후보로 부적절)는 제외.
    */
   _computeTextBoxSnap(rawX, rawY, box, excludeIds = null) {
@@ -1200,11 +1244,13 @@ export class TreeRenderer {
     const w = box.width ?? 200;
     const h = box.height ?? 50;
 
-    let bestX = null, bestXDist = threshold, guideX = null;
-    let bestY = null, bestYDist = threshold, guideY = null;
+    let bestX = null, bestXDist = threshold, guideX = null, bestXAnchor = null;
+    let bestY = null, bestYDist = threshold, guideY = null, bestYAnchor = null;
 
     const myXs = [rawX, rawX + w, rawX + w / 2]; // 왼쪽, 오른쪽, 가로 중간
     const myYs = [rawY, rawY + h, rawY + h / 2]; // 위, 아래, 세로 중간
+    const myCenterX = rawX + w / 2;
+    const myCenterY = rawY + h / 2;
 
     for (const other of this.tree.textBoxes.values()) {
       if (other.id === box.id || excludeIds?.has(other.id)) continue;
@@ -1219,23 +1265,60 @@ export class TreeRenderer {
           bestXDist = Math.abs(dx);
           bestX = rawX + dx; // rawX를 그만큼 밀면 내 i번째 기준선이 상대와 정확히 겹친다
           guideX = theirXs[i];
+          bestXAnchor = null; // 무한 점선 정렬 가이드로 이미 보여주므로 꺾은선 anchor는 안 둠
         }
         const dy = theirYs[i] - myYs[i];
         if (Math.abs(dy) < bestYDist) {
           bestYDist = Math.abs(dy);
           bestY = rawY + dy;
           guideY = theirYs[i];
+          bestYAnchor = null;
+        }
+      }
+
+      // "일정 거리" 스냅 — 중심점 기준으로 상대로부터 COL_SPACING(가로)/ROW_SPACING(세로)만큼
+      // 떨어진 자리에 오면 붙는다(정렬 여부와 무관).
+      const theirCenterX = other.x + ow / 2;
+      const theirCenterY = other.y + oh / 2;
+      const anchor = { x: theirCenterX, y: theirCenterY };
+      for (const targetCenterX of [theirCenterX + COL_SPACING, theirCenterX - COL_SPACING]) {
+        const dx = targetCenterX - myCenterX;
+        if (Math.abs(dx) < bestXDist) {
+          bestXDist = Math.abs(dx);
+          bestX = rawX + dx;
+          guideX = null;
+          bestXAnchor = anchor;
+        }
+      }
+      for (const targetCenterY of [theirCenterY + ROW_SPACING, theirCenterY - ROW_SPACING]) {
+        const dy = targetCenterY - myCenterY;
+        if (Math.abs(dy) < bestYDist) {
+          bestYDist = Math.abs(dy);
+          bestY = rawY + dy;
+          guideY = null;
+          bestYAnchor = anchor;
         }
       }
     }
 
-    return {
-      x: bestX !== null ? bestX : rawX,
-      y: bestY !== null ? bestY : rawY,
-      guideX,
-      guideY,
-      extraGuides: [], // _computeSnap(사람 카드)과 반환 모양을 맞춰 그룹 드래그 쪽에서 그대로 재사용
-    };
+    const x = bestX !== null ? bestX : rawX;
+    const y = bestY !== null ? bestY : rawY;
+
+    // anchor가 있는 스냅("일정 거리")은 사람 카드의 family/template 후보와 같은 방식으로 ㄱ자
+    // 꺾은선 두 토막으로 보여준다(대각선으로 바로 잇지 않음 — 의미 없는 사선이라 헷갈림).
+    const extraGuides = [];
+    const myFinalCenterX = x + w / 2;
+    const myFinalCenterY = y + h / 2;
+    if (bestXAnchor) {
+      extraGuides.push({ x1: bestXAnchor.x, y1: bestXAnchor.y, x2: myFinalCenterX, y2: bestXAnchor.y });
+      extraGuides.push({ x1: myFinalCenterX, y1: bestXAnchor.y, x2: myFinalCenterX, y2: myFinalCenterY });
+    }
+    if (bestYAnchor && (!bestXAnchor || bestYAnchor.x !== bestXAnchor.x || bestYAnchor.y !== bestXAnchor.y)) {
+      extraGuides.push({ x1: bestYAnchor.x, y1: bestYAnchor.y, x2: bestYAnchor.x, y2: myFinalCenterY });
+      extraGuides.push({ x1: bestYAnchor.x, y1: myFinalCenterY, x2: myFinalCenterX, y2: myFinalCenterY });
+    }
+
+    return { x, y, guideX, guideY, extraGuides };
   }
 
   /**
@@ -1652,7 +1735,12 @@ export class TreeRenderer {
         break;
       }
       case "field:remove": {
-        this.fieldEls.get(payload)?.remove();
+        const fieldEl = this.fieldEls.get(payload);
+        for (const slotEl of fieldEl?.querySelectorAll(".field-slot") ?? []) {
+          this.slotDrags.get(slotEl.dataset.slotId)?.destroy();
+          this.slotDrags.delete(slotEl.dataset.slotId);
+        }
+        fieldEl?.remove();
         this.fieldEls.delete(payload);
         const drags = this.fieldDrags.get(payload);
         if (drags) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); }

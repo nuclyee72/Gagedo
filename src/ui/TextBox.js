@@ -14,7 +14,8 @@ export function createTextBoxElement(box) {
 }
 
 /** box.text/fontSize/x/y/width/height를 DOM에 반영한다. width/height는 fontSize와 무관하다.
- * (width/height는 이번에 추가된 필드라, 그 전에 저장된 텍스트 박스에는 없을 수 있어 기본값을 둔다.) */
+ * (width/height는 이번에 추가된 필드라, 그 전에 저장된 텍스트 박스에는 없을 수 있어 기본값을 둔다.
+ * background도 마찬가지로 예전 데이터엔 없을 수 있어 기본값 true — 안 꺼져 있던 걸로 취급.) */
 export function applyTextBoxData(el, box) {
   el.style.left = `${box.x}px`;
   el.style.top = `${box.y}px`;
@@ -23,6 +24,7 @@ export function applyTextBoxData(el, box) {
   content.style.height = `${box.height ?? 50}px`;
   content.style.fontSize = `${box.fontSize}px`;
   content.textContent = box.text;
+  el.classList.toggle("no-bg", box.background === false);
 }
 
 /**

@@ -40,6 +40,7 @@ export class InspectorPanel {
       // 지금 사용자가 타이핑 중인 입력창은 건드리지 않는다(커서 위치가 튀는 걸 막기 위해).
       if (textEl && document.activeElement !== textEl) textEl.value = payload.text || "";
       if (fontEl && document.activeElement !== fontEl) fontEl.value = payload.fontSize;
+      this._syncTextBoxBgButton();
     });
 
     // 관계선도 마찬가지 — 캔버스에서 라벨을 그 자리 즉석 편집(_startLabelEdit)해도 사이드바에
@@ -442,6 +443,7 @@ export class InspectorPanel {
     this.textBox = box;
     this.el.querySelector(".tb-text").value = box.text || "";
     this.el.querySelector(".tb-fontsize").value = box.fontSize;
+    this._syncTextBoxBgButton();
     this.el.classList.add("open");
   }
 
@@ -456,6 +458,10 @@ export class InspectorPanel {
       </label>
       <label>글자 크기
         <input type="number" class="tb-fontsize" min="10" max="72" step="1">
+      </label>
+      <label class="toggle-row">
+        <span>배경</span>
+        <button type="button" class="tb-bg-btn" title="끄면 카드 배경/테두리 없이 순수한 텍스트만 보여요">ON</button>
       </label>
       <button type="button" class="tb-delete">이 텍스트 박스 삭제</button>
     `;
@@ -473,6 +479,13 @@ export class InspectorPanel {
       this.tree.updateTextBox(this.textBox.id, { fontSize: next });
     });
 
+    this.el.querySelector(".tb-bg-btn").addEventListener("click", () => {
+      if (!this.textBox) return;
+      // 예전 데이터엔 background 필드가 아예 없을 수 있어(기본값 true로 취급) !== false로 판정한다.
+      const current = this.textBox.background !== false;
+      this.tree.updateTextBox(this.textBox.id, { background: !current });
+    });
+
     this.el.querySelector(".tb-delete").addEventListener("click", () => {
       if (!this.textBox) return;
       if (confirm("이 텍스트 박스를 삭제할까요?")) {
@@ -480,6 +493,13 @@ export class InspectorPanel {
         this.close();
       }
     });
+  }
+
+  _syncTextBoxBgButton() {
+    const btn = this.el.querySelector(".tb-bg-btn");
+    const on = this.textBox?.background !== false;
+    btn.textContent = on ? "ON" : "OFF";
+    btn.classList.toggle("active", on);
   }
 
   /** 인물/텍스트 박스처럼, 관계선을 클릭했을 때도 사이드바를 띄워서 라벨/색/선 종류를 고칠 수 있게 한다. */
@@ -630,14 +650,19 @@ export class InspectorPanel {
         <strong>필드</strong>
         <button type="button" class="inspector-close" aria-label="닫기">×</button>
       </div>
-      <label class="field-toggle-row">
+      <label class="toggle-row">
         <span>템플릿 수정</span>
-        <button type="button" class="field-template-btn" title="켜면 필드의 빈 곳을 클릭해 인물 자리(점선)를 추가할 수 있어요">OFF</button>
+        <button type="button" class="field-template-btn" title="켜면 템플릿 자리를 추가·이동·삭제할 수 있어요">OFF</button>
       </label>
-      <p class="field-hint">템플릿 수정이 켜진 동안 필드의 빈 곳을 클릭하면 그 자리에 점선 템플릿 자리가 생깁니다. 자리를 다시 클릭하면 삭제해요.</p>
-      <label class="field-toggle-row">
-        <span>이 필드 잠금</span>
+      <button type="button" class="field-template-add" hidden>+ 템플릿 추가</button>
+      <p class="field-hint">템플릿 수정이 켜진 동안 "+ 템플릿 추가"로 인물 자리(점선)를 만들고, 드래그해서 위치를 옮기거나 클릭하면 삭제할 수 있어요.</p>
+      <label class="toggle-row">
+        <span>포함된 인물 잠금</span>
         <button type="button" class="field-lock-btn" title="켜면 포함된 오브젝트는 필드를 옮겨야만 같이 움직여요(개별 이동 불가)">🔓</button>
+      </label>
+      <label class="toggle-row">
+        <span>필드 위치 잠금</span>
+        <button type="button" class="field-self-lock-btn" title="켜면 이 필드 자신을 드래그(단독/마키 모두)로 못 옮겨요">🔓</button>
       </label>
       <button type="button" class="field-delete">이 필드 삭제</button>
     `;
@@ -649,9 +674,30 @@ export class InspectorPanel {
       this.tree.updateField(this.field.id, { templateMode: !this.field.templateMode });
     });
 
+    // 새 템플릿 자리는 왼쪽 위부터 격자로 순서대로 놓는다(무작위로 흩뿌리면 이미 있던 슬롯이나
+    // 인물과 우연히 겹쳐서 찾기/잡기 힘든 자리에 생길 수 있음) — 정확한 위치는 템플릿 수정 중
+    // 드래그로 옮기면 된다("템플릿 위치 이동"). 간격(SPACING)은 슬롯 지름(--photo-size 96px)
+    // 보다 넉넉히 둬서 슬롯끼리는 항상 안 겹치게 한다.
+    this.el.querySelector(".field-template-add").addEventListener("click", () => {
+      if (!this.field) return;
+      const SPACING = 110;
+      const cols = Math.max(1, Math.floor(this.field.width / SPACING));
+      const index = this.field.templateSlots.length;
+      const relX = 60 + (index % cols) * SPACING;
+      const relY = 60 + Math.floor(index / cols) * SPACING;
+      this.tree.updateField(this.field.id, {
+        templateSlots: [...this.field.templateSlots, { id: uuid(), relX, relY }],
+      });
+    });
+
     this.el.querySelector(".field-lock-btn").addEventListener("click", () => {
       if (!this.field) return;
       this.tree.updateField(this.field.id, { locked: !this.field.locked });
+    });
+
+    this.el.querySelector(".field-self-lock-btn").addEventListener("click", () => {
+      if (!this.field) return;
+      this.tree.updateField(this.field.id, { selfLocked: !this.field.selfLocked });
     });
 
     this.el.querySelector(".field-delete").addEventListener("click", () => {
@@ -664,16 +710,23 @@ export class InspectorPanel {
   }
 
   _syncFieldControls() {
-    const templateBtn = this.el.querySelector(".field-template-btn");
     const templateOn = !!this.field?.templateMode;
+    const templateBtn = this.el.querySelector(".field-template-btn");
     templateBtn.textContent = templateOn ? "ON" : "OFF";
     templateBtn.classList.toggle("active", templateOn);
+    this.el.querySelector(".field-template-add").hidden = !templateOn;
 
     const lockBtn = this.el.querySelector(".field-lock-btn");
     const locked = !!this.field?.locked;
     lockBtn.textContent = locked ? "🔒" : "🔓";
     lockBtn.classList.toggle("active", locked);
-    lockBtn.title = locked ? "잠김 — 눌러서 풀기" : "이 필드 잠금";
+    lockBtn.title = locked ? "잠김 — 눌러서 풀기" : "포함된 인물 잠금";
+
+    const selfLockBtn = this.el.querySelector(".field-self-lock-btn");
+    const selfLocked = !!this.field?.selfLocked;
+    selfLockBtn.textContent = selfLocked ? "🔒" : "🔓";
+    selfLockBtn.classList.toggle("active", selfLocked);
+    selfLockBtn.title = selfLocked ? "잠김 — 눌러서 풀기" : "필드 위치 잠금";
   }
 
   close() {

@@ -235,7 +235,9 @@ function updateMarqueeHoverPreview() {
   }
   for (const [id, el] of renderer.fieldEls) {
     if (!rectsIntersect(rect, el.getBoundingClientRect())) continue;
-    const locked = !!renderer.tree.fields.get(id)?.locked;
+    // field.locked(내용물 잠금)가 아니라 selfLocked(필드 자신의 위치 잠금)를 봐야 한다 — 마키
+    // 그룹 드래그에서 실제로 걸러지는 건 selfLocked 쪽이므로(_beginGroupDrag) 미리보기도 맞춰야 함.
+    const locked = !!renderer.tree.fields.get(id)?.selfLocked;
     el.classList.toggle("drag-locked-preview", locked);
     el.classList.toggle("marquee-hover", !locked);
     nextEls.push(el);
@@ -527,7 +529,10 @@ function pasteClipboard() {
 
   const newTextBoxIds = [];
   for (const b of clipboard.textBoxes) {
-    const created = tree.addTextBox({ x: b.x + dx, y: b.y + dy, text: b.text, fontSize: b.fontSize, width: b.width, height: b.height });
+    const created = tree.addTextBox({
+      x: b.x + dx, y: b.y + dy, text: b.text, fontSize: b.fontSize, width: b.width, height: b.height,
+      background: b.background,
+    });
     newTextBoxIds.push(created.id);
   }
 
@@ -542,7 +547,7 @@ function pasteClipboard() {
     });
     const created = tree.addField({
       x: f.x + dx, y: f.y + dy, width: f.width, height: f.height,
-      locked: f.locked, templateMode: f.templateMode, templateSlots: newSlots,
+      locked: f.locked, selfLocked: f.selfLocked, templateMode: f.templateMode, templateSlots: newSlots,
     });
     fieldIdMap.set(f.id, created.id);
     newFieldIds.push(created.id);

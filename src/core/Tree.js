@@ -92,10 +92,12 @@ export class TreeModel {
     this._emit("relationship:remove", id);
   }
 
-  addTextBox({ x = 0, y = 0, text = "텍스트", fontSize = 20, width = 200, height = 50 } = {}) {
+  addTextBox({ x = 0, y = 0, text = "텍스트", fontSize = 20, width = 200, height = 50, background = true } = {}) {
     // width/height는 fontSize와 무관한 독립된 값이다 — 모서리로 크기를 조절해도 글자 크기는
-    // 안 바뀌고(사이드바에서만 바꿈), 상자 크기만 바뀐다.
-    const box = { id: uuid(), x, y, text, fontSize, width, height, locked: false };
+    // 안 바뀌고(사이드바에서만 바꿈), 상자 크기만 바뀐다. background를 끄면 카드 배경/테두리
+    // 없이 순수한 텍스트만 떠 있는 라벨처럼 보인다(찾기 쉽도록 마우스오버·선택 시엔 여전히
+    // 강조 테두리가 보임 — style.css의 .text-box.no-bg 참고).
+    const box = { id: uuid(), x, y, text, fontSize, width, height, locked: false, background };
     this.textBoxes.set(box.id, box);
     this._emit("textbox:add", box);
     return box;
@@ -119,10 +121,16 @@ export class TreeModel {
    * templateSlots는 필드 기준 상대좌표({id, relX, relY})라 필드가 움직이면 자동으로 같이
    * 움직인다(따로 갱신할 필요 없음). locked는 person.locked와는 별개 개념 — 켜면 이 필드
    * 위에 있는 오브젝트의 "개별" 드래그만 막고, 필드 자신을 옮기면 여전히 다 같이 움직인다.
+   * selfLocked는 반대로 person.locked/textBox.locked와 같은 뜻 — 켜면 필드 "자신"의 위치를
+   * (직접 드래그로든, 마키로 묶어 그룹으로든) 못 옮긴다. 리사이즈는 텍스트박스가 locked여도
+   * 리사이즈는 막지 않는 것과 같은 원칙으로 selfLocked와 무관하게 항상 가능하다.
    */
-  addField({ x = 0, y = 0, width = 260, height = 180, locked = false, templateMode = false, templateSlots = [] } = {}) {
+  addField({
+    x = 0, y = 0, width = 260, height = 180, locked = false, selfLocked = false,
+    templateMode = false, templateSlots = [],
+  } = {}) {
     const field = {
-      id: uuid(), x, y, width, height, locked, templateMode,
+      id: uuid(), x, y, width, height, locked, selfLocked, templateMode,
       templateSlots: templateSlots.map((s) => ({ id: s.id || uuid(), relX: s.relX, relY: s.relY })),
     };
     this.fields.set(field.id, field);

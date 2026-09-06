@@ -65,3 +65,16 @@ export function applySlotPosition(el, slot) {
   el.style.left = `${slot.relX}px`;
   el.style.top = `${slot.relY}px`;
 }
+
+/** 슬롯 자체의 드래그(템플릿 수정 중 위치 재조정)와 클릭(템플릿 수정 중엔 삭제, 아니면 필드
+ * 사이드바 열기)을 하나의 DragController로 구분해서 넘겨준다 — 실제로 지금 그 동작을 허용할지
+ * (예: 템플릿 수정이 꺼져 있으면 드래그 무시)는 호출부(TreeRenderer)가 field.templateMode를
+ * 보고 콜백 안에서 판단한다. */
+export function attachSlotDrag(el, { getScale, onDragStart, onDragMove, onDragEnd, onClick }) {
+  return new DragController(el, {
+    onDragStart: () => onDragStart && onDragStart(),
+    onDragMove: (dx, dy) => onDragMove(dx / getScale(), dy / getScale()),
+    onDragEnd: () => onDragEnd && onDragEnd(),
+    onClick: (e) => onClick && onClick(e),
+  });
+}

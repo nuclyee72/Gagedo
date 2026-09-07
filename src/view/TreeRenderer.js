@@ -1396,12 +1396,16 @@ export class TreeRenderer {
   /** 비어있는 템플릿 슬롯 중 (rawX, rawY)에 화면 기준 SNAP_THRESHOLD_PX 이내로 가장 가까운
    * 것을 찾는다(2차원 거리 — 슬롯은 "정확한 자리"라 축별 후보와 달리 X/Y가 함께 맞아야 함).
    * 이미 다른 사람이 차지한 슬롯은 후보에서 뺀다(자기 자신이 이미 꽂혀 있던 슬롯은 허용 —
-   * 그 자리에서 살짝 움직였다 제자리로 돌아오는 경우). */
+   * 그 자리에서 살짝 움직였다 제자리로 돌아오는 경우). 필드가 addLocked("새 요소 추가 잠금")면
+   * 슬롯에 꽂히는 것도 엄연히 "그 필드의 새 요소가 되는" 일이므로, 잠글 때의 스냅샷
+   * (lockedMemberIds)에 없는 사람은 빈 슬롯이어도 후보에서 뺀다(실제로 겪은 버그: 슬롯 스냅은
+   * _objectsWithinField의 기하학적 필터를 안 거쳐서 addLocked를 무시하고 새로 꽂혀버렸음). */
   _computeSlotSnap(rawX, rawY, person) {
     const threshold = SNAP_THRESHOLD_PX / this.camera.scale;
     let best = null;
     let bestDist = threshold;
     for (const field of this.tree.fields.values()) {
+      if (field.addLocked && !(field.lockedMemberIds || []).includes(person.id)) continue;
       for (const slot of field.templateSlots) {
         const occupant = this._personInSlot(field.id, slot.id);
         if (occupant && occupant.id !== person.id) continue;

@@ -88,6 +88,8 @@ renderer = new TreeRenderer({
   onTextBoxClick: handleTextBoxClick,
   onFieldClick: handleFieldClick,
   onSlotClick: handleSlotClickForConnect,
+  onTemplateSlotClick: handleTemplateSlotClick,
+  onTemplateRelationshipClick: handleTemplateRelationshipClick,
   trashEl,
 });
 
@@ -432,6 +434,32 @@ function handleFieldClick(id) {
   inspector.openField(field);
 }
 
+/** 템플릿 슬롯을 클릭하면(연결 모드 중이 아닐 때) 그 슬롯 전용 사이드바를 연다 — 예전엔 클릭하면
+ * 곧바로 삭제 확인창이 떴는데, 다른 오브젝트처럼 사이드바를 통해서만(그 안의 삭제 버튼으로)
+ * 지우게 한다. */
+function handleTemplateSlotClick(fieldId, slot) {
+  renderer.setSelected(null);
+  renderer.setSelectedTextBox(null);
+  renderer.setSelectedLine(null);
+  renderer.setSelectedField(null);
+  renderer.clearMultiSelection();
+  hideBulkToolbar();
+  inspector.openTemplateSlot(fieldId, slot);
+}
+
+/** 템플릿 관계(슬롯끼리 그은 안내선)를 클릭하면 그 전용 사이드바를 연다 — 라벨/색/선 종류/방향을
+ * 고칠 수 있고, 삭제도 그 사이드바의 버튼으로 한다(클릭 즉시 삭제 확인이 뜨던 예전 동작 대신). */
+function handleTemplateRelationshipClick(fieldId, tr) {
+  if (connectMode) return; // 연결 모드 중엔(고르는 대상과 안 헷갈리게) 무시한다.
+  renderer.setSelected(null);
+  renderer.setSelectedTextBox(null);
+  renderer.setSelectedLine(null);
+  renderer.setSelectedField(null);
+  renderer.clearMultiSelection();
+  hideBulkToolbar();
+  inspector.openTemplateRelationship(fieldId, tr);
+}
+
 // ---------- Ctrl+C/Ctrl+V 복사·붙여넣기(인물/텍스트박스/필드) ----------
 // clipboard: 마지막으로 복사한 내용의 스냅샷(id는 안 담음, 붙여넣을 때마다 새 id로 다시 만든다).
 // pasteCount: 같은 복사 내용을 여러 번 붙여넣을 때마다 조금씩 더 벌어지게(겹쳐 보이지 않게) 세는 값 —
@@ -767,7 +795,21 @@ tree.onChange((type, payload) => {
   if (type === "person:remove" && inspector.person?.id === payload) inspector.close();
   if (type === "textbox:remove" && inspector.textBox?.id === payload) inspector.close();
   if (type === "relationship:remove" && inspector.relationship?.id === payload) inspector.close();
-  if (type === "field:remove" && inspector.field?.id === payload) inspector.close();
+  if (type === "field:remove") {
+    if (inspector.field?.id === payload) inspector.close();
+    if (inspector.templateSlotFieldId === payload) inspector.close();
+    if (inspector.templateRelFieldId === payload) inspector.close();
+  }
+  // 템플릿 슬롯/템플릿 관계는 별도 삭제 이벤트가 없다(field:update로 배열만 바뀜) — 지금 사이드바에
+  // 열려 있는 대상이 그 배열에서 없어졌으면(다른 경로로 삭제됨) 닫는다.
+  if (type === "field:update") {
+    if (inspector.mode === "template-slot" && inspector.templateSlotFieldId === payload.id) {
+      if (!payload.templateSlots.some((s) => s.id === inspector.templateSlot?.id)) inspector.close();
+    }
+    if (inspector.mode === "template-rel" && inspector.templateRelFieldId === payload.id) {
+      if (!(payload.templateRelationships || []).some((t) => t.id === inspector.templateRel?.id)) inspector.close();
+    }
+  }
 });
 
 // 모바일 하단 시트: 헤더(제목+× 있는 맨 위 줄)를 손가락으로 아래로 당기면 시트 전체가 그대로

@@ -30,7 +30,10 @@ const LINE_HIT_TARGET_SCREEN_PX = 16; // 보이지 않는 클릭 판정 폭도 �
 
 /** TreeModel의 변화를 구독해 사람 카드(DOM)와 관계선(SVG)을 동기화한다. */
 export class TreeRenderer {
-  constructor({ tree, worldEl, linesEl, fieldsEl, camera, store, onCardClick, onLineClick, onTextBoxClick, onFieldClick, onSlotClick, trashEl }) {
+  constructor({
+    tree, worldEl, linesEl, fieldsEl, camera, store, onCardClick, onLineClick, onTextBoxClick,
+    onFieldClick, onSlotClick, onTemplateSlotClick, onTemplateRelationshipClick, trashEl,
+  }) {
     this.tree = tree;
     this.worldEl = worldEl;
     this.linesEl = linesEl;
@@ -42,8 +45,12 @@ export class TreeRenderer {
     this.onTextBoxClick = onTextBoxClick;
     this.onFieldClick = onFieldClick;
     // "&관계" 연결 모드 중 슬롯 클릭을 가로챌지 여부 — main.js가 판단해 true(처리함)/false(평소
-    // 대로 삭제·사이드바 열기)를 돌려준다.
+    // 대로 사이드바 열기)를 돌려준다.
     this.onSlotClick = onSlotClick;
+    // 템플릿 슬롯/템플릿 관계(안내선)를 클릭했을 때 그 전용 사이드바를 열어달라는 요청 — 예전엔
+    // 클릭하면 곧바로 삭제 확인창이 떴는데, 다른 오브젝트처럼 사이드바를 통해서만 지우게 한다.
+    this.onTemplateSlotClick = onTemplateSlotClick;
+    this.onTemplateRelationshipClick = onTemplateRelationshipClick;
     this.trashEl = trashEl;
 
     this.cardEls = new Map();
@@ -797,6 +804,8 @@ export class TreeRenderer {
     let tlAnchorBottom = field.y + field.height;
     let tlRawX = field.x;
     let tlRawY = field.y;
+    let tlStartX = field.x; // 리사이즈 시작 시점의 필드 x/y — 슬롯 보정용 델타 계산 기준
+    let tlStartY = field.y;
     const resizeDragTL = attachFieldResize(el, {
       getScale: () => this.camera.scale,
       corner: "tl",
@@ -810,6 +819,8 @@ export class TreeRenderer {
         tlAnchorBottom = curY + curH;
         tlRawX = curX;
         tlRawY = curY;
+        tlStartX = curX;
+        tlStartY = curY;
       },
       onResize: (dxWorld, dyWorld) => {
         tlRawX += dxWorld;
@@ -818,11 +829,22 @@ export class TreeRenderer {
         const h = Math.max(MIN_H, Math.round(tlAnchorBottom - tlRawY));
         // 최소 크기에 걸리면 왼쪽 위 좌표도 그만큼 다시 안쪽으로 당겨서, 오른쪽 아래가 계속
         // 같은 자리에 고정된 것처럼 보이게 한다.
-        el.style.left = `${tlAnchorRight - w}px`;
-        el.style.top = `${tlAnchorBottom - h}px`;
+        const newX = tlAnchorRight - w;
+        const newY = tlAnchorBottom - h;
+        el.style.left = `${newX}px`;
+        el.style.top = `${newY}px`;
         const content = el.querySelector(".field-content");
         content.style.width = `${w}px`;
         content.style.height = `${h}px`;
+        // 필드의 왼쪽 위 모서리(x/y)가 움직인 만큼, 그 안의 템플릿 슬롯(필드 기준 상대좌표라
+        // 부모가 움직이면 같이 딸려 움직여 보임)을 반대로 보정해서 화면상 절대 위치가 그대로
+        // 있게 한다 — "왼쪽 위 손잡이를 건드려도 필드 요소들은 안 움직이게".
+        const deltaX = newX - tlStartX;
+        const deltaY = newY - tlStartY;
+        for (const slot of field.templateSlots) {
+          const slotEl = el.querySelector(`.field-slot[data-slot-id="${slot.id}"]`);
+          if (slotEl) applySlotPosition(slotEl, { relX: slot.relX - deltaX, relY: slot.relY - deltaY });
+        }
       },
       onResizeEnd: () => {
         const content = el.querySelector(".field-content");
@@ -830,7 +852,11 @@ export class TreeRenderer {
         const h = parseFloat(content.style.height) || field.height;
         const x = parseFloat(el.style.left) || field.x;
         const y = parseFloat(el.style.top) || field.y;
-        this.tree.updateField(field.id, { x, y, width: w, height: h });
+        const deltaX = x - tlStartX;
+        const deltaY = y - tlStartY;
+        // 라이브 프리뷰와 똑같이, 커밋할 때도 슬롯 상대좌표를 반대로 보정해 절대 위치를 지킨다.
+        const templateSlots = field.templateSlots.map((s) => ({ ...s, relX: s.relX - deltaX, relY: s.relY - deltaY }));
+        this.tree.updateField(field.id, { x, y, width: w, height: h, templateSlots });
       },
     });
 
@@ -920,17 +946,13 @@ export class TreeRenderer {
       },
       onClick: () => {
         // "&관계" 연결 모드 중이면(main.js) 클릭을 슬롯 고르기로 먼저 넘긴다 — 처리했다고
-        // (true) 답하면 여기서 끝, 평소의 삭제/사이드바 열기 동작은 건너뛴다.
+        // (true) 답하면 여기서 끝, 평소의 사이드바 열기 동작은 건너뛴다.
         if (this.onSlotClick && this.onSlotClick(fieldId, slotId)) return;
+        // 클릭하면 곧바로 삭제 확인창이 뜨던 예전 동작 대신, 인물/텍스트박스/관계선/필드와
+        // 똑같이 이 슬롯 전용 사이드바를 연다(삭제는 그 사이드바의 버튼으로).
         const field = this.tree.fields.get(fieldId);
-        if (!field) return;
-        if (field.templateMode) {
-          if (confirm("이 템플릿 자리를 삭제할까요? 여기 걸린 템플릿 관계도 함께 지워집니다.")) {
-            this.tree.removeTemplateSlot(fieldId, slotId);
-          }
-        } else {
-          this.onFieldClick && this.onFieldClick(fieldId);
-        }
+        const slot = field?.templateSlots.find((s) => s.id === slotId);
+        if (field && slot) this.onTemplateSlotClick && this.onTemplateSlotClick(fieldId, slot);
       },
     });
     this.slotDrags.set(slotId, drag);
@@ -950,15 +972,13 @@ export class TreeRenderer {
       let lineEl = svg.querySelector(`.field-rel-line[data-tr-id="${tr.id}"]`);
       if (!lineEl) {
         lineEl = createTemplateRelLineElement(tr);
+        // 클릭하면 곧바로 삭제 확인창이 뜨던 예전 동작 대신, 이 템플릿 관계 전용 사이드바를
+        // 연다(라벨/색/선 종류/방향을 고칠 수 있고, 삭제도 그 사이드바의 버튼으로 한다).
         lineEl.addEventListener("click", (e) => {
           e.stopPropagation();
           const liveField = this.tree.fields.get(field.id);
-          if (!liveField) return;
-          if (liveField.templateMode) {
-            if (confirm("이 템플릿 관계를 삭제할까요?")) this.tree.removeTemplateRelationship(field.id, tr.id);
-          } else {
-            this.onFieldClick && this.onFieldClick(field.id);
-          }
+          const liveTr = liveField?.templateRelationships?.find((t) => t.id === tr.id);
+          if (liveField && liveTr) this.onTemplateRelationshipClick && this.onTemplateRelationshipClick(field.id, liveTr);
         });
         svg.appendChild(lineEl);
       }
@@ -1232,6 +1252,24 @@ export class TreeRenderer {
       }
     }
 
+    // 슬롯을 드래그하는 중이면(alsoMatchSlotId), 템플릿 관계로 이어둔 "슬롯판" 부모-자식
+    // 트렁크(부모 슬롯 쌍의 중점 — "절반 길이" 지점 — 기준 n등분 자리)도 인물과 완전히 동등하게
+    // 검사한다("템플릿끼리도 인물과 똑같이 클리핑").
+    if (alsoMatchSlotId !== undefined) {
+      const slotFamily = this._slotFamilySnapCandidates(alsoMatchSlotId);
+      if (slotFamily) {
+        const anchor = { x: slotFamily.trunkX, y: slotFamily.parentY };
+        for (const c of slotFamily.xCandidates) {
+          const dx = Math.abs(c.x - rawX);
+          if (dx < bestXDist) { bestXDist = dx; bestX = c.x; bestXAnchor = anchor; }
+        }
+        for (const c of slotFamily.yCandidates) {
+          const dy = Math.abs(c.y - rawY);
+          if (dy < bestYDist) { bestYDist = dy; bestY = c.y; bestYAnchor = anchor; }
+        }
+      }
+    }
+
     // 템플릿 간격(표준 칸 간격) 스냅은 특정 관계와 상관없이 "모든 인물"(+슬롯 드래그 중이면
     // 다른 슬롯들도) 기준으로 검사한다.
     const template = this._templateSnapCandidates(person, excludeIds, alsoMatchSlotId);
@@ -1384,6 +1422,56 @@ export class TreeRenderer {
     const yCandidates = [{ y: parent.y + ROW_SPACING }];
 
     return { xCandidates, yCandidates, trunkX: parent.x, parentY: parent.y };
+  }
+
+  /**
+   * _familySnapCandidates의 슬롯 버전 — 이 슬롯이 어떤 필드의 "부모-자식" 템플릿 관계(안내선)
+   * 에서 자식 역할이면, 그 부모 슬롯 쌍의 중점("절반 길이" 트렁크)을 기준으로 한 n등분 후보를
+   * 계산한다. 인물의 _familySnapCandidates와 정확히 같은 공식(AutoLayout.js 기준 트렁크 중심
+   * COL_SPACING 간격 n개 슬롯, 세로는 부모 세대+ROW_SPACING)을 그대로 슬롯 데이터에 적용한 것 —
+   * "템플릿끼리도 인물과 완전히 동등하게 클리핑"하기 위함.
+   */
+  _slotFamilySnapCandidates(slotId) {
+    for (const field of this.tree.fields.values()) {
+      const trs = field.templateRelationships || [];
+      for (const tr of trs) {
+        if (tr.type === "parent-child" && tr.slotIds[2] === slotId) {
+          const [p1Id, p2Id] = tr.slotIds;
+          const p1 = field.templateSlots.find((s) => s.id === p1Id);
+          const p2 = field.templateSlots.find((s) => s.id === p2Id);
+          if (!p1 || !p2) return null;
+          const parent1 = { x: field.x + p1.relX, y: field.y + p1.relY };
+          const parent2 = { x: field.x + p2.relX, y: field.y + p2.relY };
+          // 같은 부모 슬롯 쌍(순서 무관)을 공유하는 "부모-자식" 템플릿 관계 전부 = 형제 수.
+          const siblings = trs.filter((t) =>
+            t.type === "parent-child" &&
+            ((t.slotIds[0] === p1Id && t.slotIds[1] === p2Id) || (t.slotIds[0] === p2Id && t.slotIds[1] === p1Id))
+          );
+          const n = siblings.length;
+          const trunkX = (parent1.x + parent2.x) / 2;
+          const parentY = (parent1.y + parent2.y) / 2;
+          const mid = (n - 1) / 2;
+          const xCandidates = [];
+          for (let i = 0; i < n; i++) xCandidates.push({ x: trunkX + (i - mid) * COL_SPACING });
+          const yCandidates = [{ y: parentY + ROW_SPACING }];
+          return { xCandidates, yCandidates, trunkX, parentY };
+        }
+        if (tr.type === "parent-child-solo" && tr.slotIds[1] === slotId) {
+          const [pId] = tr.slotIds;
+          const p = field.templateSlots.find((s) => s.id === pId);
+          if (!p) return null;
+          const parent = { x: field.x + p.relX, y: field.y + p.relY };
+          const siblings = trs.filter((t) => t.type === "parent-child-solo" && t.slotIds[0] === pId);
+          const n = siblings.length;
+          const mid = (n - 1) / 2;
+          const xCandidates = [];
+          for (let i = 0; i < n; i++) xCandidates.push({ x: parent.x + (i - mid) * COL_SPACING });
+          const yCandidates = [{ y: parent.y + ROW_SPACING }];
+          return { xCandidates, yCandidates, trunkX: parent.x, parentY: parent.y };
+        }
+      }
+    }
+    return null;
   }
 
   /**

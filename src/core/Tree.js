@@ -232,6 +232,31 @@ export class TreeModel {
     this._emit("field:update", field);
   }
 
+  /** 템플릿 관계의 라벨/색상/선종류/양방향/슬롯 순서(화살표 방향 뒤집기용)를 사이드바에서 바꾼다.
+   * 이미 양쪽 슬롯이 채워져 실제 관계선으로 성사돼 있으면(materializedRelIds) 그 관계선에도
+   * 같은 라벨/색상/선종류/양방향 값을 곧바로 반영한다 — "템플릿 것이지만 채워지면 인물 것으로
+   * 취급"이라는 원칙과 같은 맥락(사용자가 편집한 값이 실제 관계선에도 즉시 보여야 함). slotIds가
+   * 바뀌면(방향 뒤집기) 지금 성사 상태를 다시 확인한다 — 방향이 바뀐 화살표는 fromId/toId도
+   * 뒤집어야 하므로 기존 관계선을 지우고 새로 만든다. */
+  updateTemplateRelationship(fieldId, trId, patch) {
+    const field = this.fields.get(fieldId);
+    if (!field) return;
+    const tr = field.templateRelationships?.find((t) => t.id === trId);
+    if (!tr) return;
+    Object.assign(tr, patch);
+    if (tr.materializedRelIds.length) {
+      const stylePatch = {};
+      for (const key of ["label", "color", "lineStyle", "bidirectional"]) {
+        if (key in patch) stylePatch[key] = patch[key];
+      }
+      if (Object.keys(stylePatch).length) {
+        this.updateRelationship(tr.materializedRelIds[tr.materializedRelIds.length - 1], stylePatch);
+      }
+    }
+    this._emit("field:update", field);
+    if ("slotIds" in patch) this._resyncFieldTemplateRelationships(fieldId);
+  }
+
   /** 그 필드의 템플릿 관계 전부를 지금 슬롯 점유 상태에 맞춰 다시 맞춘다 — 양쪽(또는 세) 슬롯이
    * 전부 채워져 있으면 실제 relationship을 만들고(이미 정확히 그 사람들로 만들어져 있으면
    * 그대로 둠), 아니면(비었거나 다른 사람으로 바뀌었으면) 기존 걸 지우고 다시 안내선으로 되돌린다. */

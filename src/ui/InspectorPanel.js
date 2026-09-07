@@ -24,7 +24,13 @@ export class InspectorPanel {
     this.textBox = null;
     this.relationship = null;
     this.field = null;
-    this.mode = null; // "person" | "textbox" | "relationship" | "field" — 지금 사이드바가 어느 걸 보여주고 있는지
+    this.templateSlot = null; // 템플릿 슬롯(점선 자리) 사이드바 대상
+    this.templateSlotFieldId = null;
+    this.templateRel = null; // 템플릿 관계(슬롯끼리 그은 안내선) 사이드바 대상
+    this.templateRelFieldId = null;
+    // "person" | "textbox" | "relationship" | "field" | "template-slot" | "template-rel"
+    // — 지금 사이드바가 어느 걸 보여주고 있는지.
+    this.mode = null;
     this.cropEditor = new ImageCropEditor(cropModalEl);
     this._buildPersonSkeleton();
     this.mode = "person";
@@ -629,6 +635,173 @@ export class InspectorPanel {
     });
   }
 
+  /** 템플릿 슬롯을 클릭했을 때(템플릿 수정 중이어도) 사이드바를 띄운다 — 예전엔 클릭하면 바로
+   * 삭제 확인창이 떴는데, 인물/텍스트박스/관계선/필드와 똑같이 사이드바를 통해서만 지우게 한다. */
+  openTemplateSlot(fieldId, slot) {
+    if (this.mode !== "template-slot") {
+      this._buildTemplateSlotSkeleton();
+      this.mode = "template-slot";
+    }
+    this.person = null;
+    this.textBox = null;
+    this.relationship = null;
+    this.field = null;
+    this.templateRel = null;
+    this.templateSlotFieldId = fieldId;
+    this.templateSlot = slot;
+    this.el.classList.add("open");
+  }
+
+  _buildTemplateSlotSkeleton() {
+    this.el.innerHTML = `
+      <div class="inspector-header">
+        <strong>템플릿 자리</strong>
+        <button type="button" class="inspector-close" aria-label="닫기">×</button>
+      </div>
+      <p class="field-hint">이 자리는 실제 인물을 드래그해 꽂을 수 있는 템플릿 슬롯입니다. 템플릿 수정이 켜진 동안 드래그로 위치를 옮길 수 있어요.</p>
+      <button type="button" class="tslot-delete">이 템플릿 자리 삭제</button>
+    `;
+
+    this.el.querySelector(".inspector-close").onclick = () => this.close();
+
+    this.el.querySelector(".tslot-delete").addEventListener("click", () => {
+      if (!this.templateSlot) return;
+      if (confirm("이 템플릿 자리를 삭제할까요? 여기 걸린 템플릿 관계도 함께 지워집니다.")) {
+        this.tree.removeTemplateSlot(this.templateSlotFieldId, this.templateSlot.id);
+        this.close();
+      }
+    });
+  }
+
+  /** 템플릿 슬롯끼리 그은 "관계"(안내선)를 클릭했을 때 사이드바를 띄운다 — 실제 관계선과 거의
+   * 같은 항목(라벨/색/선 종류/화살표 방향)을 편집할 수 있고, 양쪽 슬롯이 채워져 실제 관계선이
+   * 돼 있으면(materializedRelIds) 그 값도 바로 같이 반영된다(Tree.updateTemplateRelationship). */
+  openTemplateRelationship(fieldId, tr) {
+    if (this.mode !== "template-rel") {
+      this._buildTemplateRelSkeleton();
+      this.mode = "template-rel";
+    }
+    this.person = null;
+    this.textBox = null;
+    this.relationship = null;
+    this.field = null;
+    this.templateSlot = null;
+    this.templateRelFieldId = fieldId;
+    this.templateRel = tr;
+    this.el.querySelector(".trel-type-display").textContent = TYPE_DISPLAY_NAME[tr.type] || tr.type;
+    this.el.querySelector(".trel-label").value = tr.label || "";
+    this._syncTemplateRelColorAndStyle(tr);
+    this._syncTemplateRelArrowControls(tr);
+    this.el.classList.add("open");
+  }
+
+  _syncTemplateRelArrowControls(tr) {
+    const section = this.el.querySelector(".trel-arrow-section");
+    if (!section) return;
+    const isArrow = tr.type === "arrow";
+    section.hidden = !isArrow;
+    if (!isArrow) return;
+    const kindEl = this.el.querySelector(".trel-arrow-kind");
+    if (kindEl) kindEl.value = tr.bidirectional ? "both" : "one";
+  }
+
+  _syncTemplateRelColorAndStyle(tr) {
+    const colorInput = this.el.querySelector(".trel-color-input");
+    if (colorInput && document.activeElement !== colorInput) colorInput.value = tr.color || defaultColorFor(tr.type);
+    for (const sw of this.el.querySelectorAll(".trel-color-swatches .rel-color-swatch")) {
+      sw.classList.toggle("active", !!tr.color && sw.dataset.color === tr.color);
+    }
+    const linestyleEl = this.el.querySelector(".trel-linestyle");
+    if (linestyleEl && document.activeElement !== linestyleEl) linestyleEl.value = tr.lineStyle || "solid";
+  }
+
+  _buildTemplateRelSkeleton() {
+    this.el.innerHTML = `
+      <div class="inspector-header">
+        <strong>템플릿 관계</strong>
+        <button type="button" class="inspector-close" aria-label="닫기">×</button>
+      </div>
+      <label>유형</label>
+      <div class="trel-type-display"></div>
+      <div class="trel-arrow-section" hidden>
+        <label>화살표 종류
+          <select class="trel-arrow-kind">
+            <option value="one">단방향</option>
+            <option value="both">양방향</option>
+          </select>
+        </label>
+        <button type="button" class="trel-arrow-flip">↔ 방향 바꾸기</button>
+      </div>
+      <label>라벨
+        <input type="text" class="trel-label" placeholder="예: 장남, 재혼 등">
+      </label>
+      <label>색상</label>
+      <div class="rel-color-swatches trel-color-swatches">
+        ${COLOR_PRESETS.map((c) => `<button type="button" class="rel-color-swatch" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("")}
+      </div>
+      <div class="rel-color-custom-row">
+        <input type="color" class="trel-color-input" title="직접 고르기">
+        <button type="button" class="trel-color-reset">기본값</button>
+      </div>
+      <label>선 종류
+        <select class="trel-linestyle">
+          ${Object.entries(LINE_STYLE_PRESETS).map(([key, { label }]) => `<option value="${key}">${label}</option>`).join("")}
+        </select>
+      </label>
+      <p class="field-hint">양쪽(또는 세) 슬롯에 실제 인물이 모두 채워지면 이 설정 그대로 진짜 관계선이 됩니다.</p>
+      <button type="button" class="trel-delete">이 템플릿 관계 삭제</button>
+    `;
+
+    this.el.querySelector(".inspector-close").onclick = () => this.close();
+
+    this.el.querySelector(".trel-label").addEventListener("input", (e) => {
+      if (!this.templateRel) return;
+      this.tree.updateTemplateRelationship(this.templateRelFieldId, this.templateRel.id, { label: e.target.value });
+    });
+
+    this.el.querySelector(".trel-arrow-kind").addEventListener("change", (e) => {
+      if (!this.templateRel) return;
+      this.tree.updateTemplateRelationship(this.templateRelFieldId, this.templateRel.id, { bidirectional: e.target.value === "both" });
+    });
+
+    // 슬롯 순서(slotIds)를 뒤집어서 화살표 방향을 바꾼다 — 실제 관계선의 fromId/toId 뒤집기와 같은 원리.
+    this.el.querySelector(".trel-arrow-flip").addEventListener("click", () => {
+      if (!this.templateRel) return;
+      const [a, b] = this.templateRel.slotIds;
+      this.tree.updateTemplateRelationship(this.templateRelFieldId, this.templateRel.id, { slotIds: [b, a] });
+    });
+
+    for (const sw of this.el.querySelectorAll(".trel-color-swatches .rel-color-swatch")) {
+      sw.addEventListener("click", () => {
+        if (!this.templateRel) return;
+        this.tree.updateTemplateRelationship(this.templateRelFieldId, this.templateRel.id, { color: sw.dataset.color });
+      });
+    }
+
+    this.el.querySelector(".trel-color-input").addEventListener("input", (e) => {
+      if (!this.templateRel) return;
+      this.tree.updateTemplateRelationship(this.templateRelFieldId, this.templateRel.id, { color: e.target.value });
+    });
+
+    this.el.querySelector(".trel-color-reset").addEventListener("click", () => {
+      if (!this.templateRel) return;
+      this.tree.updateTemplateRelationship(this.templateRelFieldId, this.templateRel.id, { color: null });
+    });
+
+    this.el.querySelector(".trel-linestyle").addEventListener("change", (e) => {
+      if (!this.templateRel) return;
+      this.tree.updateTemplateRelationship(this.templateRelFieldId, this.templateRel.id, { lineStyle: e.target.value });
+    });
+
+    this.el.querySelector(".trel-delete").addEventListener("click", () => {
+      if (!this.templateRel) return;
+      if (confirm("이 템플릿 관계를 삭제할까요?")) {
+        this.tree.removeTemplateRelationship(this.templateRelFieldId, this.templateRel.id);
+        this.close();
+      }
+    });
+  }
+
   /** 인물/텍스트박스/관계선처럼, 필드를 클릭했을 때 사이드바를 띄운다 — 완전히 빈 컨테이너라
    * 이름/텍스트 입력창은 없고, 템플릿 수정/잠금 토글과 삭제 버튼만 둔다. */
   openField(field) {
@@ -639,6 +812,8 @@ export class InspectorPanel {
     this.person = null;
     this.textBox = null;
     this.relationship = null;
+    this.templateSlot = null;
+    this.templateRel = null;
     this.field = field;
     this._syncFieldControls();
     this.el.classList.add("open");
@@ -734,6 +909,8 @@ export class InspectorPanel {
     this.textBox = null;
     this.relationship = null;
     this.field = null;
+    this.templateSlot = null;
+    this.templateRel = null;
     this.el.classList.remove("open");
   }
 

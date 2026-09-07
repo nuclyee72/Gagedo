@@ -169,8 +169,8 @@ export class TreeRenderer {
 
   async _doRenderAll() {
     for (const drag of this.cardDrags.values()) drag.destroy();
-    for (const drags of this.textBoxDrags.values()) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); }
-    for (const drags of this.fieldDrags.values()) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); }
+    for (const drags of this.textBoxDrags.values()) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); drags.resizeDragTL.destroy(); }
+    for (const drags of this.fieldDrags.values()) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); drags.resizeDragTL.destroy(); }
     for (const drag of this.slotDrags.values()) drag.destroy();
     this.worldEl.innerHTML = "";
     this.linesEl.innerHTML = "";
@@ -672,9 +672,54 @@ export class TreeRenderer {
       },
     });
 
+    // 왼쪽 위 모서리 핸들 — 오른쪽 아래는 고정한 채(anchorRight/Bottom) 반대 방향으로 늘고
+    // 줄어든다. 정렬 스냅(_computeTextBoxResizeSnap)은 "내 오른쪽/중간이 상대와 맞는지"를
+    // 오른쪽 아래 고정 기준으로 계산하므로 이쪽 핸들엔 그대로 못 쓴다 — 최소 크기 clamp만 적용
+    // (필드의 왼쪽 위 손잡이와 같은 범위 축소).
+    let tlAnchorRight = box.x + (box.width ?? 200);
+    let tlAnchorBottom = box.y + (box.height ?? 50);
+    let tlRawX = box.x;
+    let tlRawY = box.y;
+    const resizeDragTL = attachTextBoxResize(el, {
+      getScale: () => this.camera.scale,
+      corner: "tl",
+      onResizeStart: () => {
+        const content = el.querySelector(".text-box-content");
+        const curW = parseFloat(content.style.width) || box.width || 200;
+        const curH = parseFloat(content.style.height) || box.height || 50;
+        const curX = parseFloat(el.style.left) || box.x;
+        const curY = parseFloat(el.style.top) || box.y;
+        tlAnchorRight = curX + curW;
+        tlAnchorBottom = curY + curH;
+        tlRawX = curX;
+        tlRawY = curY;
+      },
+      onResize: (dxWorld, dyWorld) => {
+        tlRawX += dxWorld;
+        tlRawY += dyWorld;
+        const w = Math.max(MIN_W, Math.round(tlAnchorRight - tlRawX));
+        const h = Math.max(MIN_H, Math.round(tlAnchorBottom - tlRawY));
+        // 최소 크기에 걸리면 그만큼 왼쪽 위 좌표도 다시 안쪽으로 당겨서, 오른쪽 아래가 계속
+        // 같은 자리에 고정된 것처럼 보이게 한다(커서를 그 이상 움직여도 더 안 줄어들 뿐).
+        el.style.left = `${tlAnchorRight - w}px`;
+        el.style.top = `${tlAnchorBottom - h}px`;
+        const content = el.querySelector(".text-box-content");
+        content.style.width = `${w}px`;
+        content.style.height = `${h}px`;
+      },
+      onResizeEnd: () => {
+        const content = el.querySelector(".text-box-content");
+        const w = parseFloat(content.style.width) || box.width;
+        const h = parseFloat(content.style.height) || box.height;
+        const x = parseFloat(el.style.left) || box.x;
+        const y = parseFloat(el.style.top) || box.y;
+        this.tree.updateTextBox(box.id, { x, y, width: w, height: h });
+      },
+    });
+
     this.worldEl.appendChild(el);
     this.textBoxEls.set(box.id, el);
-    this.textBoxDrags.set(box.id, { moveDrag, resizeDrag });
+    this.textBoxDrags.set(box.id, { moveDrag, resizeDrag, resizeDragTL });
   }
 
   /**
@@ -746,9 +791,52 @@ export class TreeRenderer {
       },
     });
 
+    // 왼쪽 위 모서리 핸들 — 오른쪽 아래를 고정한 채(anchorRight/Bottom) 반대 방향으로 늘고
+    // 줄어든다. 텍스트박스의 왼쪽 위 손잡이와 같은 원칙(정렬 스냅 없이 최소 크기만 clamp).
+    let tlAnchorRight = field.x + field.width;
+    let tlAnchorBottom = field.y + field.height;
+    let tlRawX = field.x;
+    let tlRawY = field.y;
+    const resizeDragTL = attachFieldResize(el, {
+      getScale: () => this.camera.scale,
+      corner: "tl",
+      onResizeStart: () => {
+        const content = el.querySelector(".field-content");
+        const curW = parseFloat(content.style.width) || field.width;
+        const curH = parseFloat(content.style.height) || field.height;
+        const curX = parseFloat(el.style.left) || field.x;
+        const curY = parseFloat(el.style.top) || field.y;
+        tlAnchorRight = curX + curW;
+        tlAnchorBottom = curY + curH;
+        tlRawX = curX;
+        tlRawY = curY;
+      },
+      onResize: (dxWorld, dyWorld) => {
+        tlRawX += dxWorld;
+        tlRawY += dyWorld;
+        const w = Math.max(MIN_W, Math.round(tlAnchorRight - tlRawX));
+        const h = Math.max(MIN_H, Math.round(tlAnchorBottom - tlRawY));
+        // 최소 크기에 걸리면 왼쪽 위 좌표도 그만큼 다시 안쪽으로 당겨서, 오른쪽 아래가 계속
+        // 같은 자리에 고정된 것처럼 보이게 한다.
+        el.style.left = `${tlAnchorRight - w}px`;
+        el.style.top = `${tlAnchorBottom - h}px`;
+        const content = el.querySelector(".field-content");
+        content.style.width = `${w}px`;
+        content.style.height = `${h}px`;
+      },
+      onResizeEnd: () => {
+        const content = el.querySelector(".field-content");
+        const w = parseFloat(content.style.width) || field.width;
+        const h = parseFloat(content.style.height) || field.height;
+        const x = parseFloat(el.style.left) || field.x;
+        const y = parseFloat(el.style.top) || field.y;
+        this.tree.updateField(field.id, { x, y, width: w, height: h });
+      },
+    });
+
     this.fieldsEl.appendChild(el);
     this.fieldEls.set(field.id, el);
-    this.fieldDrags.set(field.id, { moveDrag, resizeDrag });
+    this.fieldDrags.set(field.id, { moveDrag, resizeDrag, resizeDragTL });
   }
 
   /** field.templateSlots 배열을 실제 DOM(.field-slot)과 맞춘다 — 추가/삭제된 슬롯만 갱신하고,
@@ -1835,7 +1923,7 @@ export class TreeRenderer {
         this.textBoxEls.get(payload)?.remove();
         this.textBoxEls.delete(payload);
         const drags = this.textBoxDrags.get(payload);
-        if (drags) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); }
+        if (drags) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); drags.resizeDragTL.destroy(); }
         this.textBoxDrags.delete(payload);
         break;
       }
@@ -1860,7 +1948,7 @@ export class TreeRenderer {
         fieldEl?.remove();
         this.fieldEls.delete(payload);
         const drags = this.fieldDrags.get(payload);
-        if (drags) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); }
+        if (drags) { drags.moveDrag.destroy(); drags.resizeDrag.destroy(); drags.resizeDragTL.destroy(); }
         this.fieldDrags.delete(payload);
         break;
       }

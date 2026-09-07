@@ -565,6 +565,31 @@ html, body {
   pointer-events: auto;
 }
 
+/* 왼쪽 위 리사이즈 손잡이 — 위 오른쪽 아래 손잡이와 생김새(잡는 느낌의 대각선 그립 아이콘)는
+   그대로 재사용하고 위치만 반대쪽 모서리로 옮긴다. */
+.text-box-resize-tl {
+  position: absolute;
+  left: -7px;
+  top: -7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background:
+    linear-gradient(135deg, transparent 0 40%, var(--panel-bg) 40% 46%, transparent 46% 60%, var(--panel-bg) 60% 66%, transparent 66%),
+    var(--accent);
+  border: 2px solid var(--panel-bg);
+  box-shadow: 0 1px 4px var(--shadow);
+  cursor: nwse-resize;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+
+.text-box.selected .text-box-resize-tl {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* ---------- 필드(인물을 묶는 컨테이너 + 템플릿 자리) ---------- */
 
 .field-box {
@@ -636,6 +661,30 @@ html, body {
 }
 
 .field-box.selected .field-resize {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 왼쪽 위 리사이즈 손잡이 — 위 오른쪽 아래 손잡이와 생김새는 그대로, 위치만 반대쪽 모서리로. */
+.field-resize-tl {
+  position: absolute;
+  left: -7px;
+  top: -7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background:
+    linear-gradient(135deg, transparent 0 40%, var(--panel-bg) 40% 46%, transparent 46% 60%, var(--panel-bg) 60% 66%, transparent 66%),
+    var(--accent);
+  border: 2px solid var(--panel-bg);
+  box-shadow: 0 1px 4px var(--shadow);
+  cursor: nwse-resize;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+
+.field-box.selected .field-resize-tl {
   opacity: 1;
   pointer-events: auto;
 }

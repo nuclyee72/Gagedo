@@ -13,6 +13,7 @@ export function createFieldElement(field) {
   el.innerHTML = `
     <div class="field-content"></div>
     <svg class="field-rel-lines" aria-hidden="true"></svg>
+    <div class="field-resize-tl" title="드래그해서 필드 크기 조절(왼쪽 위 모서리 기준, 오른쪽 아래는 고정)" aria-hidden="true"></div>
     <div class="field-resize" title="드래그해서 필드 크기 조절" aria-hidden="true"></div>
   `;
   applyFieldData(el, field);
@@ -42,7 +43,8 @@ export function applyFieldData(el, field) {
 export function attachFieldDrag(el, { getScale, onDragStart, onMove, onMoveEnd, onClick }) {
   return new DragController(el, {
     filter: (e) =>
-      !e.target.closest(".field-resize") && !e.target.closest(".field-slot") && !e.target.closest(".field-rel-line"),
+      !e.target.closest(".field-resize") && !e.target.closest(".field-resize-tl") &&
+      !e.target.closest(".field-slot") && !e.target.closest(".field-rel-line"),
     onDragStart: () => onDragStart && onDragStart(),
     onDragMove: (dx, dy, e) => onMove(dx / getScale(), dy / getScale(), e),
     onDragEnd: (e) => onMoveEnd && onMoveEnd(e),
@@ -50,9 +52,11 @@ export function attachFieldDrag(el, { getScale, onDragStart, onMove, onMoveEnd, 
   });
 }
 
-/** 오른쪽 아래 모서리 손잡이 — 텍스트박스와 같은 1:1 리사이즈(배율/스냅 없음, 최소 크기만 clamp). */
-export function attachFieldResize(el, { getScale, onResizeStart, onResize, onResizeEnd }) {
-  const handle = el.querySelector(".field-resize");
+/** 모서리 손잡이(오른쪽 아래 기본, corner:"tl"이면 왼쪽 위) — 텍스트박스와 같은 1:1 리사이즈
+ * (배율/스냅 없음, 최소 크기만 clamp). 왼쪽 위 손잡이는 폭/높이뿐 아니라 x/y(고정된 오른쪽
+ * 아래를 기준으로 계산)까지 같이 바뀌므로, 그 계산은 호출한 쪽(TreeRenderer)이 맡는다. */
+export function attachFieldResize(el, { getScale, onResizeStart, onResize, onResizeEnd, corner = "br" }) {
+  const handle = el.querySelector(corner === "tl" ? ".field-resize-tl" : ".field-resize");
   return new DragController(handle, {
     onDragStart: () => onResizeStart && onResizeStart(),
     onDragMove: (dx, dy) => onResize(dx / getScale(), dy / getScale()),

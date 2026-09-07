@@ -130,6 +130,7 @@ export async function buildTreeSVG({ tree, renderer, store }) {
   for (const field of tree.fields.values()) {
     const el = createFieldElement(field);
     el.querySelector(".field-resize")?.remove(); // 조작용 손잡이는 정적 이미지에 필요 없음
+    el.querySelector(".field-resize-tl")?.remove();
     for (const slot of field.templateSlots) el.appendChild(createSlotElement(slot));
     el.style.left = `${field.x - minX}px`;
     el.style.top = `${field.y - minY}px`;
@@ -149,6 +150,7 @@ export async function buildTreeSVG({ tree, renderer, store }) {
   for (const box of tree.textBoxes.values()) {
     const el = createTextBoxElement(box);
     el.querySelector(".text-box-resize")?.remove(); // 조작용 손잡이는 정적 이미지에 필요 없음
+    el.querySelector(".text-box-resize-tl")?.remove();
     el.style.left = `${box.x - minX}px`;
     el.style.top = `${box.y - minY}px`;
     host.appendChild(el);

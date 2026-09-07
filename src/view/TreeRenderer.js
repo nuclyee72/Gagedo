@@ -534,7 +534,7 @@ export class TreeRenderer {
         if (person.locked) return;
         // 잠긴 필드 위에 올라가 있는 인물은 개별 드래그로 못 옮긴다(필드 자신을 옮기는 건 이
         // 체크와 무관 — _beginFieldDrag가 따로 처리) — 휴지통 힌트도 안 보여줌.
-        blockedByLockedField = this._isInLockedField(person.x, person.y);
+        blockedByLockedField = this._isInLockedField(person.x, person.y, person.id);
         if (blockedByLockedField) return;
         // 마키로 2개 이상 골라둔 상태에서 그중 하나를 끌면, 그 묶음 전체가 같이 움직인다.
         if (this.multiSelected.people.has(person.id) && this.getMultiSelectionCount() >= 2) {
@@ -1097,12 +1097,19 @@ export class TreeRenderer {
     return { people, textBoxes };
   }
 
-  /** 이 좌표가 "잠긴" 필드 위에 있는지 — person.locked/box.locked와는 별개 개념으로, 이게
-   * true면 그 오브젝트의 "개별" 드래그 시작을 막는다(필드 자신을 옮기는 건 여전히 됨). */
-  _isInLockedField(x, y) {
+  /** 이 좌표(+personId)가 "잠긴" 필드 위에 있는지 — person.locked/box.locked와는 별개 개념으로,
+   * 이게 true면 그 오브젝트의 "개별" 드래그 시작을 막는다(필드 자신을 옮기는 건 여전히 됨).
+   * addLocked("새 요소 추가 잠금")가 같이 켜진 필드라면, 잠글 때의 스냅샷(lockedMemberIds)에
+   * 없는 사람은 기하학적으로 겹쳐 있어도 "그 필드의 것"이 아니므로 여기서도 제외한다 — 안 그러면
+   * addLocked 이후 새로 올라온 사람이 필드 이동에는 안 딸려가면서(제외) 개별 드래그는 막히는
+   * (포함된 인물 잠금에 걸림) 사각지대가 생겨 어떤 방법으로도 못 옮기게 된다(실제로 겪은 버그). */
+  _isInLockedField(x, y, personId) {
     for (const f of this.tree.fields.values()) {
       if (!f.locked) continue;
-      if (x >= f.x && x <= f.x + f.width && y >= f.y && y <= f.y + f.height) return true;
+      if (x >= f.x && x <= f.x + f.width && y >= f.y && y <= f.y + f.height) {
+        if (f.addLocked && !(f.lockedMemberIds || []).includes(personId)) continue;
+        return true;
+      }
     }
     return false;
   }

@@ -77,6 +77,12 @@ export class DragController {
     this._pointerId = e.pointerId;
     this._startX = this._lastX = e.clientX;
     this._startY = this._lastY = e.clientY;
+    // 공개 별칭 — onDragStart(e)에 넘어오는 e는 "5px 임계값을 처음 넘긴 그 순간"의
+    // pointermove 이벤트라 실제 pointerdown 지점과 몇 px 어긋난다(마키 선택처럼 대략적인
+    // 사각형엔 무해했지만, 필드를 드래그로 그리는 것처럼 정확한 시작점이 필요한 곳에서는
+    // 그 오차가 그대로 드러난다) — 진짜 시작 좌표가 필요한 호출부는 e.clientX 대신 이걸 쓴다.
+    this.startX = e.clientX;
+    this.startY = e.clientY;
   }
 
   _onMove(e) {

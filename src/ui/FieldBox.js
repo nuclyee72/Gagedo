@@ -33,6 +33,9 @@ export function applyFieldData(el, field) {
   relLines.setAttribute("width", field.width);
   relLines.setAttribute("height", field.height);
   el.classList.toggle("template-editing", !!field.templateMode);
+  // 위치 잠금(selfLocked)이면 이동뿐 아니라 리사이즈도 막히므로(TreeRenderer._addField),
+  // 손잡이도 이 클래스로 숨겨서 "보이는데 안 움직이는" 혼란을 없앤다.
+  el.classList.toggle("self-locked", !!field.selfLocked);
 }
 
 /**

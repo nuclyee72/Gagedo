@@ -58,6 +58,11 @@ let connectPicks = []; // 지금까지 순서대로 고른 인물 id들(또는 �
 // 만들기로 취급한다(사람과 슬롯을 섞어 고르는 건 지원하지 않음) — 그 대상 필드 id.
 let connectTemplateFieldId = null;
 
+// "+필드"를 누르면 곧바로 만들지 않고, 캔버스에 왼쪽 위에서 시작해 드래그로 크기를 정해
+// 그리는 모드로 들어간다(도형 그리기 툴과 같은 방식) — 배경 드래그(backgroundDrag)가
+// marqueeState/marqueeBoxEl을 재사용해 사각형을 그리고, 다 그리면 이 값을 다시 끈다.
+let fieldDrawMode = false;
+
 const CONNECT_TYPE_NAMES = {
   "parent-child-solo": "부모-자식(부모1)",
   "parent-child": "부모-자식(부모2)",
@@ -109,6 +114,7 @@ const inspector = new InspectorPanel(inspectorEl, {
     for (const p of tree.people.values()) for (const t of p.tags || []) set.add(t);
     return [...set];
   },
+  getFieldMembers: (field) => renderer._objectsWithinField(field),
   cropModalEl,
 });
 
@@ -127,6 +133,7 @@ const toolbar = new Toolbar(toolbarEl, {
     else toolbar.toggleTypeMenu();
   },
   pickConnectType: (type) => {
+    if (fieldDrawMode) exitFieldDrawMode(); // 다른 모드로 넘어가면 필드 그리기 대기는 취소.
     connectType = type;
     connectMode = true;
     connectPicks = [];
@@ -145,13 +152,13 @@ const toolbar = new Toolbar(toolbarEl, {
     tree.addTextBox({ x: x + jitter() - 100, y: y + jitter() - 25 });
   },
   addField: () => {
-    const rect = viewportEl.getBoundingClientRect();
-    const { x, y } = camera.screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    const jitter = () => (Math.random() - 0.5) * 40;
-    // 필드도 텍스트박스처럼 (x,y)가 왼쪽 위 모서리라, 화면 중앙에 "보이도록" 만들려면 기본 크기
-    // (Tree.js addField의 기본값 260×180)의 절반만큼 왼쪽/위로 당겨서 놓는다.
-    const field = tree.addField({ x: x + jitter() - 130, y: y + jitter() - 90 });
-    handleFieldClick(field.id);
+    // 다시 누르면 취소(연결 모드의 "&관계" 버튼과 같은 토글 규칙).
+    if (fieldDrawMode) { exitFieldDrawMode(); return; }
+    if (connectMode) exitConnectMode();
+    fieldDrawMode = true;
+    viewportEl.classList.add("field-draw-mode");
+    renderer.clearMultiSelection();
+    hideBulkToolbar();
   },
   zoomIn: () => zoomAtCenter(1.25),
   zoomOut: () => zoomAtCenter(1 / 1.25),
@@ -304,6 +311,32 @@ function finalizeMarquee() {
   }
 }
 
+function exitFieldDrawMode() {
+  fieldDrawMode = false;
+  viewportEl.classList.remove("field-draw-mode");
+}
+
+// 필드 리사이즈 최소 크기(TreeRenderer.js._addField의 MIN_W/MIN_H와 맞춘 값)와 같은 기준으로
+// clamp한다 — 드래그로 너무 작게(거의 클릭 수준으로) 그려도 다루기 힘든 필드가 되지 않도록.
+const MIN_DRAWN_FIELD_W = 120;
+const MIN_DRAWN_FIELD_H = 90;
+
+/** 마키와 같은 사각형(marqueeBoxEl)을 드래그로 그려서 그 크기·위치 그대로 필드를 만든다
+ * ("왼쪽 위부터 시작해서 드래그로 생성"). */
+function finalizeFieldDraw() {
+  const rect = marqueeBoxEl.getBoundingClientRect();
+  marqueeBoxEl.classList.remove("visible");
+  marqueeState = null;
+  exitFieldDrawMode();
+
+  const topLeft = camera.screenToWorld(rect.left, rect.top);
+  const bottomRight = camera.screenToWorld(rect.right, rect.bottom);
+  const width = Math.max(MIN_DRAWN_FIELD_W, bottomRight.x - topLeft.x);
+  const height = Math.max(MIN_DRAWN_FIELD_H, bottomRight.y - topLeft.y);
+  const field = tree.addField({ x: topLeft.x, y: topLeft.y, width, height });
+  handleFieldClick(field.id);
+}
+
 function updateBulkToolbar() {
   const count = renderer.getMultiSelectionCount();
   if (count < 2) {
@@ -334,8 +367,14 @@ bulkToolbarEl.querySelector('[data-action="bulk-lock"]').addEventListener("click
 const backgroundDrag = new DragController(viewportEl, {
   filter: (e) => !e.target.closest(".person-card") && !e.target.closest(".text-box") && !e.target.closest(".field-box"),
   onDragStart: (e) => {
-    if (e.shiftKey) {
-      marqueeState = { startX: e.clientX, startY: e.clientY };
+    // 필드 그리기 모드가 켜져 있으면(방금 "+필드"를 눌렀음) shift 여부와 무관하게 그 사각형
+    // 그리기가 최우선이다 — 마키 선택과 같은 박스(marqueeState/marqueeBoxEl)를 그대로 재사용한다.
+    // 시작점은 e.clientX/Y가 아니라 backgroundDrag.startX/Y(실제 pointerdown 지점)를 써야 한다
+    // — onDragStart(e)의 e는 "5px 임계값을 막 넘긴 그 순간"의 pointermove라 실제 누른 지점과
+    // 몇 px 어긋나는데, 마키 선택 때는 무해했지만(대충 걸리기만 하면 됨) 필드는 그 사각형
+    // 크기·위치가 그대로 결과물이 되므로 오차가 그대로 드러난다(실제로 겪음).
+    if (fieldDrawMode || e.shiftKey) {
+      marqueeState = { startX: backgroundDrag.startX, startY: backgroundDrag.startY };
       marqueeBoxEl.classList.add("visible");
       updateMarqueeBox(e.clientX, e.clientY);
     } else {
@@ -345,19 +384,30 @@ const backgroundDrag = new DragController(viewportEl, {
   onDragMove: (dx, dy, e) => {
     if (marqueeState) {
       updateMarqueeBox(e.clientX, e.clientY);
-      updateMarqueeHoverPreview();
+      // 필드를 그리는 중엔 카드/텍스트박스 마키 미리보기(선택 강조)를 보여줄 이유가 없다.
+      if (!fieldDrawMode) updateMarqueeHoverPreview();
     } else {
       camera.pan(dx, dy);
     }
   },
   onDragEnd: () => {
     if (marqueeState) {
-      finalizeMarquee();
+      if (fieldDrawMode) finalizeFieldDraw();
+      else finalizeMarquee();
     } else {
       camera.setTransforming(false);
     }
   },
-  onClick: () => {
+  onClick: (e) => {
+    if (fieldDrawMode) {
+      // 드래그 없이 그냥 클릭만 했으면 기본 크기(260×180)로, 클릭한 지점을 왼쪽 위 모서리
+      // 삼아 만든다("왼쪽 위부터 시작").
+      const { x, y } = camera.screenToWorld(e.clientX, e.clientY);
+      const field = tree.addField({ x, y });
+      exitFieldDrawMode();
+      handleFieldClick(field.id);
+      return;
+    }
     if (connectMode) return;
     renderer.setSelected(null);
     renderer.setSelectedTextBox(null);
@@ -569,12 +619,14 @@ function pasteClipboard() {
     newPeopleIds.push(created.id);
   }
 
+  const textBoxIdMap = new Map(); // 원본 텍스트박스 id -> 새 텍스트박스 id (필드 lockedMemberIds 복원에 필요)
   const newTextBoxIds = [];
   for (const b of clipboard.textBoxes) {
     const created = tree.addTextBox({
       x: b.x + dx, y: b.y + dy, text: b.text, fontSize: b.fontSize, width: b.width, height: b.height,
       background: b.background,
     });
+    textBoxIdMap.set(b.id, created.id);
     newTextBoxIds.push(created.id);
   }
 
@@ -595,10 +647,16 @@ function pasteClipboard() {
       label: tr.label, color: tr.color, lineStyle: tr.lineStyle, bidirectional: tr.bidirectional,
       materializedRelIds: [],
     }));
+    // "새 요소 추가 잠금"이 켜져 있었으면 그 스냅샷(lockedMemberIds)도 인물/텍스트박스 각각의
+    // 새 id로 다시 연결한다 — 원본 id로 남겨두면(대응하는 새 오브젝트가 없어) 잠금이 사실상
+    // 아무것도 안 걸린 것과 같아져 버린다. 이번에 함께 복사되지 않은 원본 멤버는 그냥 빠진다.
+    const newLockedMemberIds = (f.lockedMemberIds || [])
+      .map((id) => idMap.get(id) || textBoxIdMap.get(id))
+      .filter(Boolean);
     const created = tree.addField({
       x: f.x + dx, y: f.y + dy, width: f.width, height: f.height,
-      locked: f.locked, selfLocked: f.selfLocked, templateMode: f.templateMode,
-      templateSlots: newSlots, templateRelationships: newTemplateRelationships,
+      locked: f.locked, selfLocked: f.selfLocked, addLocked: f.addLocked, lockedMemberIds: newLockedMemberIds,
+      templateMode: f.templateMode, templateSlots: newSlots, templateRelationships: newTemplateRelationships,
     });
     fieldIdMap.set(f.id, created.id);
     newFieldIds.push(created.id);
@@ -865,6 +923,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     toolbar.closeTypeMenu();
     if (connectMode) exitConnectMode();
+    if (fieldDrawMode) exitFieldDrawMode();
     inspector.close();
     renderer.setSelected(null);
     renderer.setSelectedTextBox(null);

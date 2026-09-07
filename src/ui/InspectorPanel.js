@@ -14,10 +14,14 @@ const PHOTO_SHAPES = [
 
 /** 선택한 인물/텍스트 박스/관계선의 내용을 편집하는 우측 패널. */
 export class InspectorPanel {
-  constructor(el, { tree, store, onImageChange, getAllTags, cropModalEl }) {
+  constructor(el, { tree, store, onImageChange, getAllTags, cropModalEl, getFieldMembers }) {
     this.el = el;
     this.tree = tree;
     this.store = store;
+    // 필드의 "새 요소 추가 잠금"을 켜는 순간 지금 그 위에 올라가 있는 멤버를 스냅샷으로 고정해야
+    // 하는데, 그 판정(TreeRenderer._objectsWithinField, 기하학적 겹침)은 렌더러 쪽에 있어서
+    // main.js가 이 콜백으로 연결해준다.
+    this.getFieldMembers = getFieldMembers;
     this.onImageChange = onImageChange;
     this.getAllTags = getAllTags;
     this.person = null;
@@ -836,6 +840,10 @@ export class InspectorPanel {
         <button type="button" class="field-lock-btn" title="켜면 포함된 오브젝트는 필드를 옮겨야만 같이 움직여요(개별 이동 불가)">🔓</button>
       </label>
       <label class="toggle-row">
+        <span>새 요소 추가 잠금</span>
+        <button type="button" class="field-addlock-btn" title="켜는 순간의 멤버로 고정 — 그 뒤로 필드 위에 새로 올라오는 오브젝트는 필드 것으로 안 쳐요">🔓</button>
+      </label>
+      <label class="toggle-row">
         <span>필드 위치 잠금</span>
         <button type="button" class="field-self-lock-btn" title="켜면 이 필드 자신을 드래그(단독/마키 모두)로 못 옮겨요">🔓</button>
       </label>
@@ -870,6 +878,21 @@ export class InspectorPanel {
       this.tree.updateField(this.field.id, { locked: !this.field.locked });
     });
 
+    this.el.querySelector(".field-addlock-btn").addEventListener("click", () => {
+      if (!this.field) return;
+      if (this.field.addLocked) {
+        this.tree.updateField(this.field.id, { addLocked: false });
+        return;
+      }
+      // 켜는 순간 지금 이 필드 위에 올라가 있는 멤버를 스냅샷으로 고정한다 — 그 뒤로 새로
+      // 겹치는 오브젝트는(이 목록에 없는 한) 필드 것으로 인정되지 않는다.
+      const members = this.getFieldMembers ? this.getFieldMembers(this.field) : { people: [], textBoxes: [] };
+      this.tree.updateField(this.field.id, {
+        addLocked: true,
+        lockedMemberIds: [...members.people, ...members.textBoxes],
+      });
+    });
+
     this.el.querySelector(".field-self-lock-btn").addEventListener("click", () => {
       if (!this.field) return;
       this.tree.updateField(this.field.id, { selfLocked: !this.field.selfLocked });
@@ -896,6 +919,12 @@ export class InspectorPanel {
     lockBtn.textContent = locked ? "🔒" : "🔓";
     lockBtn.classList.toggle("active", locked);
     lockBtn.title = locked ? "잠김 — 눌러서 풀기" : "포함된 인물 잠금";
+
+    const addLockBtn = this.el.querySelector(".field-addlock-btn");
+    const addLocked = !!this.field?.addLocked;
+    addLockBtn.textContent = addLocked ? "🔒" : "🔓";
+    addLockBtn.classList.toggle("active", addLocked);
+    addLockBtn.title = addLocked ? "잠김 — 눌러서 풀기" : "새 요소 추가 잠금";
 
     const selfLockBtn = this.el.querySelector(".field-self-lock-btn");
     const selfLocked = !!this.field?.selfLocked;

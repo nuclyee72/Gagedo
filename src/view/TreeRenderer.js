@@ -520,13 +520,22 @@ export class TreeRenderer {
     // 이번 드래그에서 마지막으로 계산된 스냅 결과의 slotOf(템플릿 슬롯에 꽂혔는지) — onMoveEnd에서
     // person.slotOf로 커밋한다. 슬롯에 안 꽂힌 채 끝나면 null(=자유로운 인물).
     let pendingSlotOf = null;
+    // "잠긴 필드 위에 있어서 이번 드래그를 막을지"는 시작 시점(사람이 아직 그 자리에 가만히
+    // 있을 때)에만 한 번 확인해서 여기 기억해둔다. onMove마다 person.x/y(드래그로 계속 움직이는
+    // "지금" 좌표)로 다시 확인하면, 그냥 지나가는 자유로운 인물이 잠긴 필드 영역을 스쳐 지나가는
+    // 순간 그 프레임에 위치 갱신이 막혀버리고 — person.x/y가 그 지점(=잠긴 필드 안)에 멈춘 채로
+    // 다음 프레임도 계속 같은 판정이 나와 영원히 거기 갇혀버리는 버그가 있었다("오브젝트가 그
+    // 영역 위만 스쳐도 거기 잠김"). 시작할 때 이미 잠긴 필드 위에 있던 경우만 계속 막는다.
+    let blockedByLockedField = false;
 
     const drag = attachCardDrag(el, {
       getScale: () => this.camera.scale,
       onDragStart: () => {
-        // 잠긴 인물이거나, 잠긴 필드 위에 올라가 있는 인물은 개별 드래그로 못 옮긴다(필드
-        // 자신을 옮기는 건 이 체크와 무관 — _beginFieldDrag가 따로 처리) — 휴지통 힌트도 안 보여줌.
-        if (person.locked || this._isInLockedField(person.x, person.y)) return;
+        if (person.locked) return;
+        // 잠긴 필드 위에 올라가 있는 인물은 개별 드래그로 못 옮긴다(필드 자신을 옮기는 건 이
+        // 체크와 무관 — _beginFieldDrag가 따로 처리) — 휴지통 힌트도 안 보여줌.
+        blockedByLockedField = this._isInLockedField(person.x, person.y);
+        if (blockedByLockedField) return;
         // 마키로 2개 이상 골라둔 상태에서 그중 하나를 끌면, 그 묶음 전체가 같이 움직인다.
         if (this.multiSelected.people.has(person.id) && this.getMultiSelectionCount() >= 2) {
           this._beginGroupDrag(person.id, "person");
@@ -541,7 +550,7 @@ export class TreeRenderer {
         this._showTrash();
       },
       onMove: (dx, dy, e) => {
-        if (person.locked || this._isInLockedField(person.x, person.y)) return;
+        if (person.locked || blockedByLockedField) return;
         if (this._groupDragState) {
           this._updateGroupDrag(dx, dy);
         } else {
@@ -559,7 +568,7 @@ export class TreeRenderer {
         this._setTrashArmed(e && this._isOverTrash(e.clientX, e.clientY));
       },
       onMoveEnd: (e) => {
-        if (person.locked || this._isInLockedField(person.x, person.y)) return;
+        if (person.locked || blockedByLockedField) return;
         this._hideSnapGuides();
         const droppedOnTrash = e && this._isOverTrash(e.clientX, e.clientY);
         this._hideTrash();
@@ -774,14 +783,18 @@ export class TreeRenderer {
     const MIN_H = 90;
     let rawW = field.width;
     let rawH = field.height;
+    let brResizeBlocked = false; // selfLocked(필드 위치 잠금)이면 리사이즈도 같이 막는다
     const resizeDrag = attachFieldResize(el, {
       getScale: () => this.camera.scale,
       onResizeStart: () => {
+        brResizeBlocked = !!field.selfLocked;
+        if (brResizeBlocked) return;
         const content = el.querySelector(".field-content");
         rawW = parseFloat(content.style.width) || field.width;
         rawH = parseFloat(content.style.height) || field.height;
       },
       onResize: (dxWorld, dyWorld) => {
+        if (brResizeBlocked) return;
         rawW += dxWorld;
         rawH += dyWorld;
         const w = Math.max(MIN_W, Math.round(rawW));
@@ -791,6 +804,7 @@ export class TreeRenderer {
         content.style.height = `${h}px`;
       },
       onResizeEnd: () => {
+        if (brResizeBlocked) return;
         const content = el.querySelector(".field-content");
         const w = parseFloat(content.style.width) || field.width;
         const h = parseFloat(content.style.height) || field.height;
@@ -806,10 +820,13 @@ export class TreeRenderer {
     let tlRawY = field.y;
     let tlStartX = field.x; // 리사이즈 시작 시점의 필드 x/y — 슬롯 보정용 델타 계산 기준
     let tlStartY = field.y;
+    let tlResizeBlocked = false; // selfLocked(필드 위치 잠금)이면 이 손잡이로도 크기를 못 바꾼다
     const resizeDragTL = attachFieldResize(el, {
       getScale: () => this.camera.scale,
       corner: "tl",
       onResizeStart: () => {
+        tlResizeBlocked = !!field.selfLocked;
+        if (tlResizeBlocked) return;
         const content = el.querySelector(".field-content");
         const curW = parseFloat(content.style.width) || field.width;
         const curH = parseFloat(content.style.height) || field.height;
@@ -823,6 +840,7 @@ export class TreeRenderer {
         tlStartY = curY;
       },
       onResize: (dxWorld, dyWorld) => {
+        if (tlResizeBlocked) return;
         tlRawX += dxWorld;
         tlRawY += dyWorld;
         const w = Math.max(MIN_W, Math.round(tlAnchorRight - tlRawX));
@@ -854,6 +872,7 @@ export class TreeRenderer {
         this._syncTemplateRelLines(field, el, overrides);
       },
       onResizeEnd: () => {
+        if (tlResizeBlocked) return;
         const content = el.querySelector(".field-content");
         const w = parseFloat(content.style.width) || field.width;
         const h = parseFloat(content.style.height) || field.height;
@@ -1055,14 +1074,20 @@ export class TreeRenderer {
    * 중심, 텍스트박스는 상자 중심)이 사각형 안에 들어오면 포함시킨다. 소속을 별도로 계속
    * 관리하지 않고 필드를 드래그하는 매 순간·복사하는 순간에 그때그때 다시 계산한다. */
   _objectsWithinField(field) {
+    // addLocked("새 요소 추가 잠금")가 켜져 있으면, 기하학적으로 겹치더라도 그 순간의
+    // lockedMemberIds(잠글 때 스냅샷 찍어둔 멤버 목록)에 없는 오브젝트는 "새 멤버"로 인정하지
+    // 않는다 — 이미 목록에 있던 것만(계속 겹쳐 있는 한) 그대로 인정된다.
+    const memberFilter = field.addLocked ? new Set(field.lockedMemberIds || []) : null;
     const people = [];
     for (const p of this.tree.people.values()) {
+      if (memberFilter && !memberFilter.has(p.id)) continue;
       if (p.x >= field.x && p.x <= field.x + field.width && p.y >= field.y && p.y <= field.y + field.height) {
         people.push(p.id);
       }
     }
     const textBoxes = [];
     for (const b of this.tree.textBoxes.values()) {
+      if (memberFilter && !memberFilter.has(b.id)) continue;
       const cx = b.x + (b.width ?? 200) / 2;
       const cy = b.y + (b.height ?? 50) / 2;
       if (cx >= field.x && cx <= field.x + field.width && cy >= field.y && cy <= field.y + field.height) {

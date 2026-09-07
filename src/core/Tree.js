@@ -147,6 +147,10 @@ export class TreeModel {
    * selfLocked는 반대로 person.locked/textBox.locked와 같은 뜻 — 켜면 필드 "자신"의 위치를
    * (직접 드래그로든, 마키로 묶어 그룹으로든) 못 옮긴다. 리사이즈는 텍스트박스가 locked여도
    * 리사이즈는 막지 않는 것과 같은 원칙으로 selfLocked와 무관하게 항상 가능하다.
+   * addLocked는 또 다른 별개 개념 — "이 필드 위에 올라간 것"의 판정(TreeRenderer._objectsWithinField,
+   * 필드 드래그로 같이 옮기거나 복사할 때 쓰임)을 켜는 순간의 lockedMemberIds로 고정한다. 켜져
+   * 있는 동안은 그 목록에 없는 오브젝트가 나중에 필드 위로 올라와도(단순히 기하학적으로 겹치는
+   * 것만으로는) 필드의 "새" 요소로 인정되지 않는다 — 이미 목록에 있던 것만 계속 인정된다.
    * templateRelationships는 슬롯끼리 이어둔 "안내선" — { id, type, slotIds, label, color,
    * lineStyle, bidirectional, materializedRelIds }. type/slotIds 구성은 &관계 연결과 같다
    * (parent-child-solo/spouse/arrow/custom은 slotIds 2개, parent-child(부모2)는 3개 —
@@ -156,11 +160,13 @@ export class TreeModel {
    * updatePerson/removePerson(슬롯 점유 변화)과 updateField(슬롯/템플릿 관계 변화) 때마다 맞춘다.
    */
   addField({
-    x = 0, y = 0, width = 260, height = 180, locked = false, selfLocked = false,
-    templateMode = false, templateSlots = [], templateRelationships = [],
+    x = 0, y = 0, width = 260, height = 180, locked = false, selfLocked = false, addLocked = false,
+    lockedMemberIds = [], templateMode = false, templateSlots = [], templateRelationships = [],
   } = {}) {
     const field = {
-      id: uuid(), x, y, width, height, locked, selfLocked, templateMode,
+      id: uuid(), x, y, width, height, locked, selfLocked, addLocked,
+      lockedMemberIds: [...lockedMemberIds],
+      templateMode,
       templateSlots: templateSlots.map((s) => ({ id: s.id || uuid(), relX: s.relX, relY: s.relY })),
       templateRelationships: templateRelationships.map((tr) => ({
         id: tr.id || uuid(),

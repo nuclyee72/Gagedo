@@ -165,6 +165,7 @@ html, body {
 
 #viewport:active { cursor: grabbing; }
 #viewport.connect-mode { cursor: crosshair; }
+#viewport.field-draw-mode { cursor: crosshair; }
 
 #stage {
   position: absolute;
@@ -660,7 +661,7 @@ html, body {
   transition: opacity 0.1s ease;
 }
 
-.field-box.selected .field-resize {
+.field-box.selected:not(.self-locked) .field-resize {
   opacity: 1;
   pointer-events: auto;
 }
@@ -684,7 +685,7 @@ html, body {
   transition: opacity 0.1s ease;
 }
 
-.field-box.selected .field-resize-tl {
+.field-box.selected:not(.self-locked) .field-resize-tl {
   opacity: 1;
   pointer-events: auto;
 }

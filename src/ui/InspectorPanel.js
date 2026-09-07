@@ -847,6 +847,30 @@ export class InspectorPanel {
         <span>필드 위치 잠금</span>
         <button type="button" class="field-self-lock-btn" title="켜면 이 필드 자신을 드래그(단독/마키 모두)로 못 옮겨요">🔓</button>
       </label>
+      <label>배경색</label>
+      <div class="field-bg-swatches rel-color-swatches">
+        ${COLOR_PRESETS.map((c) => `<button type="button" class="rel-color-swatch" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("")}
+      </div>
+      <div class="rel-color-custom-row">
+        <input type="color" class="field-bg-color" title="직접 고르기">
+        <button type="button" class="field-bg-reset">기본값</button>
+      </div>
+      <label>테두리색</label>
+      <div class="field-border-swatches rel-color-swatches">
+        ${COLOR_PRESETS.map((c) => `<button type="button" class="rel-color-swatch" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("")}
+      </div>
+      <div class="rel-color-custom-row">
+        <input type="color" class="field-border-color" title="직접 고르기">
+        <button type="button" class="field-border-reset">기본값</button>
+      </div>
+      <label>테두리 굵기 <span class="field-border-width-value"></span>
+        <input type="range" class="field-border-width" min="0" max="10" step="1">
+      </label>
+      <label>테두리 모양
+        <select class="field-borderstyle">
+          ${Object.entries(LINE_STYLE_PRESETS).map(([key, { label }]) => `<option value="${key}">${label}</option>`).join("")}
+        </select>
+      </label>
       <button type="button" class="field-delete">이 필드 삭제</button>
     `;
 
@@ -898,6 +922,8 @@ export class InspectorPanel {
       this.tree.updateField(this.field.id, { selfLocked: !this.field.selfLocked });
     });
 
+    this._wireFieldDecorationInputs();
+
     this.el.querySelector(".field-delete").addEventListener("click", () => {
       if (!this.field) return;
       if (confirm("이 필드를 삭제할까요? 안에 있던 인물/텍스트박스는 그대로 남습니다.")) {
@@ -905,6 +931,83 @@ export class InspectorPanel {
         this.close();
       }
     });
+  }
+
+  /** 필드 배경색/테두리색·굵기·모양 — 인물 사진 테두리(스와치+커스텀 색상+기본값 되돌리기)와
+   * 같은 구성을 배경/테두리 두 벌로 반복한다. */
+  _wireFieldDecorationInputs() {
+    for (const sw of this.el.querySelectorAll(".field-bg-swatches .rel-color-swatch")) {
+      sw.addEventListener("click", () => {
+        if (!this.field) return;
+        this.tree.updateField(this.field.id, { bgColor: sw.dataset.color });
+        this._syncFieldDecorationControls();
+      });
+    }
+    this.el.querySelector(".field-bg-color").addEventListener("input", (e) => {
+      if (!this.field) return;
+      this.tree.updateField(this.field.id, { bgColor: e.target.value });
+      this._syncFieldDecorationControls();
+    });
+    this.el.querySelector(".field-bg-reset").addEventListener("click", () => {
+      if (!this.field) return;
+      this.tree.updateField(this.field.id, { bgColor: null });
+      this._syncFieldDecorationControls();
+    });
+
+    for (const sw of this.el.querySelectorAll(".field-border-swatches .rel-color-swatch")) {
+      sw.addEventListener("click", () => {
+        if (!this.field) return;
+        this.tree.updateField(this.field.id, { borderColor: sw.dataset.color });
+        this._syncFieldDecorationControls();
+      });
+    }
+    this.el.querySelector(".field-border-color").addEventListener("input", (e) => {
+      if (!this.field) return;
+      this.tree.updateField(this.field.id, { borderColor: e.target.value });
+      this._syncFieldDecorationControls();
+    });
+    this.el.querySelector(".field-border-reset").addEventListener("click", () => {
+      if (!this.field) return;
+      this.tree.updateField(this.field.id, { borderColor: null });
+      this._syncFieldDecorationControls();
+    });
+    this.el.querySelector(".field-border-width").addEventListener("input", (e) => {
+      if (!this.field) return;
+      this.tree.updateField(this.field.id, { borderWidth: parseInt(e.target.value, 10) });
+      this.el.querySelector(".field-border-width-value").textContent = `${e.target.value}px`;
+    });
+    this.el.querySelector(".field-borderstyle").addEventListener("change", (e) => {
+      if (!this.field) return;
+      this.tree.updateField(this.field.id, { borderStyle: e.target.value });
+    });
+  }
+
+  /** 배경/테두리 스와치의 "선택됨" 표시 + 색상/굵기/모양 입력값을 field에 맞춰 갱신한다. */
+  _syncFieldDecorationControls() {
+    const DEFAULT_BORDER_WIDTH = 1.5; // style.css의 .field-content 기본 굵기와 맞춘 값
+    const field = this.field;
+    if (!field) return;
+
+    // 기본값(null)일 땐 실제 테마 변수의 현재 값을 보여준다(다크/라이트에 따라 다름).
+    const surfaceDefault = getComputedStyle(document.documentElement).getPropertyValue("--surface").trim();
+    const bgInput = this.el.querySelector(".field-bg-color");
+    bgInput.value = field.bgColor || surfaceDefault || "#ffffff";
+    for (const sw of this.el.querySelectorAll(".field-bg-swatches .rel-color-swatch")) {
+      sw.classList.toggle("active", !!field.bgColor && sw.dataset.color === field.bgColor);
+    }
+
+    const borderDefault = getComputedStyle(document.documentElement).getPropertyValue("--border").trim();
+    const borderInput = this.el.querySelector(".field-border-color");
+    borderInput.value = field.borderColor || borderDefault || "#000000";
+    for (const sw of this.el.querySelectorAll(".field-border-swatches .rel-color-swatch")) {
+      sw.classList.toggle("active", !!field.borderColor && sw.dataset.color === field.borderColor);
+    }
+
+    const width = field.borderWidth ?? DEFAULT_BORDER_WIDTH;
+    this.el.querySelector(".field-border-width").value = width;
+    this.el.querySelector(".field-border-width-value").textContent = `${width}px`;
+
+    this.el.querySelector(".field-borderstyle").value = field.borderStyle || "dashed";
   }
 
   _syncFieldControls() {
@@ -931,6 +1034,8 @@ export class InspectorPanel {
     selfLockBtn.textContent = selfLocked ? "🔒" : "🔓";
     selfLockBtn.classList.toggle("active", selfLocked);
     selfLockBtn.title = selfLocked ? "잠김 — 눌러서 풀기" : "필드 위치 잠금";
+
+    this._syncFieldDecorationControls();
   }
 
   close() {

@@ -162,11 +162,16 @@ export class TreeModel {
   addField({
     x = 0, y = 0, width = 260, height = 180, locked = false, selfLocked = false, addLocked = false,
     lockedMemberIds = [], templateMode = false, templateSlots = [], templateRelationships = [],
+    bgColor = null, borderColor = null, borderWidth = null, borderStyle = null,
   } = {}) {
     const field = {
       id: uuid(), x, y, width, height, locked, selfLocked, addLocked,
       lockedMemberIds: [...lockedMemberIds],
       templateMode,
+      // 배경/테두리 꾸미기 — 전부 null이면 style.css의 기본 모양(점선 테두리 + --surface 배경)
+      // 그대로 쓴다. FieldBox.js가 CSS 커스텀 프로퍼티로 적용해서, 선택/호버/템플릿 편집 중
+      // 강조 테두리(accent색)는 이 커스텀 색과 무관하게 여전히 그 위에 그대로 보인다.
+      bgColor, borderColor, borderWidth, borderStyle,
       templateSlots: templateSlots.map((s) => ({ id: s.id || uuid(), relX: s.relX, relY: s.relY })),
       templateRelationships: templateRelationships.map((tr) => ({
         id: tr.id || uuid(),

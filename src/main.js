@@ -657,6 +657,7 @@ function pasteClipboard() {
       x: f.x + dx, y: f.y + dy, width: f.width, height: f.height,
       locked: f.locked, selfLocked: f.selfLocked, addLocked: f.addLocked, lockedMemberIds: newLockedMemberIds,
       templateMode: f.templateMode, templateSlots: newSlots, templateRelationships: newTemplateRelationships,
+      bgColor: f.bgColor, borderColor: f.borderColor, borderWidth: f.borderWidth, borderStyle: f.borderStyle,
     });
     fieldIdMap.set(f.id, created.id);
     newFieldIds.push(created.id);

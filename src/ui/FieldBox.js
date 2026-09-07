@@ -20,6 +20,14 @@ export function createFieldElement(field) {
   return el;
 }
 
+/** CSS 커스텀 프로퍼티를 값이 있으면 설정하고 없으면(null/undefined) 아예 지운다 — 빈 문자열로
+ * 설정하면 var(--x, fallback)의 fallback이 안 먹으므로(빈 값도 "설정된 값"으로 침) 반드시
+ * removeProperty로 지워야 기본값으로 되돌아간다. */
+function setOrClearVar(el, name, value) {
+  if (value) el.style.setProperty(name, value);
+  else el.style.removeProperty(name);
+}
+
 /** field.x/y/width/height/templateMode를 DOM에 반영한다(슬롯 자체는 TreeRenderer가 별도로 동기화). */
 export function applyFieldData(el, field) {
   el.style.left = `${field.x}px`;
@@ -27,6 +35,14 @@ export function applyFieldData(el, field) {
   const content = el.querySelector(".field-content");
   content.style.width = `${field.width}px`;
   content.style.height = `${field.height}px`;
+  // 배경/테두리 꾸미기 — CSS 커스텀 프로퍼티로 넘겨서, style.css의 .field-content 기본 규칙이
+  // var(--field-*, 기본값)으로 받아쓴다. 실제 border-color를 여기서 직접 못 박지 않는 이유는
+  // 호버/선택/템플릿편집 강조 테두리(accent색)가 여전히 이 위에 그대로 덮어써야 하기 때문 —
+  // 인라인 style로 직접 border-color를 주면 그 어떤 클래스 규칙보다도 우선해버려서 강조가 안 보임.
+  setOrClearVar(content, "--field-bg", field.bgColor);
+  setOrClearVar(content, "--field-border-color", field.borderColor);
+  setOrClearVar(content, "--field-border-width", field.borderWidth ? `${field.borderWidth}px` : null);
+  setOrClearVar(content, "--field-border-style", field.borderStyle);
   // 템플릿 관계 안내선용 SVG도 .field-content와 정확히 같은 크기·원점(필드 왼쪽 위 모서리
   // 기준)으로 맞춰서, 슬롯의 relX/relY 좌표를 그대로 SVG 좌표로 써도 겹치게 한다.
   const relLines = el.querySelector(".field-rel-lines");

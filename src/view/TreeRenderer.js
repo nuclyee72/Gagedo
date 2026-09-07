@@ -841,10 +841,17 @@ export class TreeRenderer {
         // 있게 한다 — "왼쪽 위 손잡이를 건드려도 필드 요소들은 안 움직이게".
         const deltaX = newX - tlStartX;
         const deltaY = newY - tlStartY;
+        const overrides = {};
         for (const slot of field.templateSlots) {
+          const relX = slot.relX - deltaX;
+          const relY = slot.relY - deltaY;
+          overrides[slot.id] = { x: relX, y: relY };
           const slotEl = el.querySelector(`.field-slot[data-slot-id="${slot.id}"]`);
-          if (slotEl) applySlotPosition(slotEl, { relX: slot.relX - deltaX, relY: slot.relY - deltaY });
+          if (slotEl) applySlotPosition(slotEl, { relX, relY });
         }
+        // 템플릿 관계 안내선도 리사이즈 중 라이브로 보정된 슬롯 위치를 따라오게 한다(위와 같은
+        // 이유 — "템플릿 이동시킬 때 선도 같이 움직임").
+        this._syncTemplateRelLines(field, el, overrides);
       },
       onResizeEnd: () => {
         const content = el.querySelector(".field-content");
@@ -932,6 +939,11 @@ export class TreeRenderer {
         this._setGuide("h", snapped.guideY);
         this._setGuide("v", snapped.guideX);
         this._setExtraGuides(snapped.extraGuides);
+        // 이 슬롯에 걸린 템플릿 관계 안내선도 커밋 전(드래그 중) 라이브 위치를 그대로 따라오게
+        // 한다("템플릿 이동시킬 때 선 움직이는 것도 보이게") — field:update는 드래그가 끝나야
+        // 나가므로, 그 전까지는 override로 지금 이 슬롯의 미확정 위치를 대신 넘겨준다.
+        const fieldEl = this.fieldEls.get(fieldId);
+        if (fieldEl) this._syncTemplateRelLines(field, fieldEl, { [slotId]: { x: curRelX, y: curRelY } });
       },
       onDragEnd: () => {
         if (!editing) return;
@@ -960,8 +972,10 @@ export class TreeRenderer {
 
   /** field.templateRelationships 배열을 실제 SVG(.field-rel-line)와 맞춘다 — 슬롯 위치나
    * 점유 상태(인물이 꽂히거나 빠짐)가 바뀔 때마다 field:update로 다시 불린다
-   * (Tree.js._resyncFieldTemplateRelationships 참고). */
-  _syncTemplateRelLines(field, el) {
+   * (Tree.js._resyncFieldTemplateRelationships 참고). overridePositions({slotId: {x,y}})를
+   * 주면 그 슬롯(들)은 tree 값 대신 그 좌표를 쓴다 — 슬롯을 드래그하는 도중처럼 아직 커밋 전인
+   * 라이브 위치로 안내선을 실시간으로 따라오게 할 때 쓴다("템플릿 이동시킬 때 선도 같이 움직임"). */
+  _syncTemplateRelLines(field, el, overridePositions = null) {
     const svg = el.querySelector(".field-rel-lines");
     const trs = field.templateRelationships || [];
     const wantedIds = new Set(trs.map((tr) => tr.id));
@@ -982,16 +996,59 @@ export class TreeRenderer {
         });
         svg.appendChild(lineEl);
       }
-      // 슬롯이 비어 있으면 그 슬롯의 점선 위치를, 채워져 있으면 지금 그 자리를 차지한 인물의
-      // (필드 기준 상대) 위치를 잇는다 — "안내선이지만 사람이 채워지면 그 사람을 따라간다".
-      const points = tr.slotIds.map((slotId) => {
-        const occupant = this._personInSlot(field.id, slotId);
-        if (occupant) return { x: occupant.x - field.x, y: occupant.y - field.y };
-        const slot = field.templateSlots.find((s) => s.id === slotId);
-        return slot ? { x: slot.relX, y: slot.relY } : { x: 0, y: 0 };
-      });
+      const points = this._computeTemplateLinePoints(field, tr, overridePositions);
       applyTemplateRelLineData(lineEl, points, (tr.materializedRelIds || []).length > 0);
     }
+  }
+
+  /** 템플릿 관계(슬롯끼리 그은 안내선) 하나의 실제 그려질 점들을 계산한다 — 실제 인물 관계선을
+   * 그리는 _computeLinePoints와 정확히 같은 규칙(배우자/화살표는 직선, 부모-자식은 자식이
+   * 하나면 배우자 선 위 지점→자식 직선, 둘 이상이면 부부 중점 트렁크→버스 바→자식 스텁)을
+   * 슬롯 데이터에 그대로 적용한다 — "템플릿끼리 부모-자식(부모2) 했을 때 선이 실제 관계선과
+   * 달라 보이던" 문제. 슬롯이 비어 있으면 그 점선 위치를, 채워져 있으면 지금 그 자리를 차지한
+   * 인물의(필드 기준 상대) 위치를 쓴다 — "안내선이지만 사람이 채워지면 그 사람을 따라간다". */
+  _computeTemplateLinePoints(field, tr, overridePositions = null) {
+    const posOf = (slotId) => {
+      if (overridePositions?.[slotId]) return overridePositions[slotId];
+      const occupant = this._personInSlot(field.id, slotId);
+      if (occupant) return { x: occupant.x - field.x, y: occupant.y - field.y };
+      const slot = field.templateSlots.find((s) => s.id === slotId);
+      return slot ? { x: slot.relX, y: slot.relY } : { x: 0, y: 0 };
+    };
+
+    if (tr.type !== "parent-child") {
+      // 배우자/화살표/기타 + "부모-자식(부모1)"(솔로)는 항상 단순 직선.
+      return [posOf(tr.slotIds[0]), posOf(tr.slotIds[1])];
+    }
+    const [p1Id, p2Id, childId] = tr.slotIds;
+    const a = posOf(p1Id);
+    const partner = posOf(p2Id);
+    const b = posOf(childId);
+    // 같은 부모 슬롯 쌍(순서 무관)을 공유하는 "부모-자식" 템플릿 관계 전부(자기 자신 포함) = 형제자매.
+    const siblings = (field.templateRelationships || []).filter((t) =>
+      t.type === "parent-child" &&
+      ((t.slotIds[0] === p1Id && t.slotIds[1] === p2Id) || (t.slotIds[0] === p2Id && t.slotIds[1] === p1Id))
+    );
+    if (siblings.length <= 1) {
+      const minX = Math.min(a.x, partner.x);
+      const maxX = Math.max(a.x, partner.x);
+      const dropX = Math.min(maxX, Math.max(minX, b.x));
+      const t = partner.x !== a.x ? (dropX - a.x) / (partner.x - a.x) : 0;
+      const dropY = a.y + (partner.y - a.y) * t;
+      return [{ x: dropX, y: dropY }, { x: b.x, y: b.y }];
+    }
+    const trunkX = (a.x + partner.x) / 2;
+    const trunkY = (a.y + partner.y) / 2;
+    const children = siblings.map((s) => posOf(s.slotIds[2]));
+    const minChildY = Math.min(...children.map((c) => c.y));
+    let busY = trunkY + (minChildY - trunkY) * 0.5;
+    if (busY - trunkY < 20) busY = trunkY + 20; // 부모와 너무 가까워지지 않도록 최소 간격 보장
+    return [
+      { x: trunkX, y: trunkY },
+      { x: trunkX, y: busY },
+      { x: b.x, y: busY },
+      { x: b.x, y: b.y },
+    ];
   }
 
   /** field의 사각형 안에 "올라가 있는" 인물/텍스트박스 id 목록 — 각자의 기준점(인물은 사진 원

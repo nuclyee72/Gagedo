@@ -198,11 +198,18 @@ export class TreeModel {
     this._resyncFieldTemplateRelationships(id);
   }
 
-  removeField(id) {
-    if (!this.fields.delete(id)) return;
-    // 이 필드의 슬롯에 꽂혀 있던 인물들은 자유로운 인물로 되돌아간다(정보는 그대로 유지).
-    // 이미 실제 관계선이 됐던 것(materializedRelIds)은 필드가 없어져도 건드리지 않는다 —
-    // "필드를 지워도 안의 인물/관계는 남는다"는 삭제 확인 문구와 같은 원칙.
+  /** 필드를 지운다. "그 위에 올라가 있는" 인물/텍스트박스가 무엇인지(기하학적 겹침)는 Tree
+   * 자신이 판정하지 않는다 — 호출자(TreeRenderer._objectsWithinField)가 지금 이 필드의 멤버를
+   * 계산해 people/textBoxes로 넘겨주면, 그것들을 removePerson/removeTextBox로 먼저 지우고
+   * (관계선도 removePerson이 알아서 함께 정리) 나서 필드 자신을 지운다 — "필드 삭제 시 포함된
+   * 요소도 전부 함께 삭제". 안 넘기면(옛 동작) 필드만 지워지고 안의 인물/텍스트박스는 남는다. */
+  removeField(id, { people = [], textBoxes = [] } = {}) {
+    if (!this.fields.has(id)) return;
+    for (const pid of people) this.removePerson(pid);
+    for (const bid of textBoxes) this.removeTextBox(bid);
+    this.fields.delete(id);
+    // 위에서 안 넘겨준(=지워지지 않은) 인물 중에도 이 필드 슬롯에 꽂혀 있던 게 남아있다면
+    // 자유로운 인물로 되돌린다(정보는 그대로 유지) — 슬롯만 있고 멤버 목록엔 없는 사각지대 방지.
     for (const p of this.people.values()) {
       if (p.slotOf?.fieldId === id) p.slotOf = null;
     }

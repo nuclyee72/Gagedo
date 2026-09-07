@@ -929,8 +929,9 @@ export class InspectorPanel {
 
     this.el.querySelector(".field-delete").addEventListener("click", () => {
       if (!this.field) return;
-      if (confirm("이 필드를 삭제할까요? 안에 있던 인물/텍스트박스는 그대로 남습니다.")) {
-        this.tree.removeField(this.field.id);
+      if (confirm("이 필드를 삭제할까요? 안에 있던 인물/텍스트박스도 함께 삭제됩니다.")) {
+        const members = this.getFieldMembers ? this.getFieldMembers(this.field) : { people: [], textBoxes: [] };
+        this.tree.removeField(this.field.id, members);
         this.close();
       }
     });

@@ -517,7 +517,12 @@ export class TreeRenderer {
       for (const [id, start] of g.positions) {
         if (start.type === "person") this.tree.removePerson(id);
         else if (start.type === "textbox") this.tree.removeTextBox(id);
-        else this.tree.removeField(id);
+        else {
+          // 필드 삭제 시 그 위에 올라가 있는 인물/텍스트박스도 함께 지운다(이미 이 루프에서
+          // 따로 지워졌어도 removePerson/removeTextBox는 없는 id에 안전하게 no-op).
+          const field = this.tree.fields.get(id);
+          this.tree.removeField(id, field ? this._objectsWithinField(field) : undefined);
+        }
       }
       this.clearMultiSelection();
       return;
@@ -1288,8 +1293,8 @@ export class TreeRenderer {
     });
   }
 
-  /** droppedOnTrash면 필드만 지운다(위에 있던 오브젝트는 자유로운 상태로 남음 — removeField가
-   * slotOf도 알아서 정리). 아니면 필드 + 함께 옮긴 오브젝트들의 최종 좌표를 전부 커밋한다. */
+  /** droppedOnTrash면 필드와 그 위에 올라가 있는 인물/텍스트박스를 전부 함께 지운다. 아니면
+   * 필드 + 함께 옮긴 오브젝트들의 최종 좌표를 전부 커밋한다. */
   _commitFieldDrag(droppedOnTrash) {
     const g = this._fieldDragState;
     if (!g) return;
@@ -1301,7 +1306,8 @@ export class TreeRenderer {
     this._hideSnapGuides();
     for (const el of g.lockedEls) el?.classList.remove("drag-locked-preview");
     if (droppedOnTrash) {
-      this.tree.removeField(g.fieldId);
+      const field = this.tree.fields.get(g.fieldId);
+      this.tree.removeField(g.fieldId, field ? this._objectsWithinField(field) : undefined);
       return;
     }
     const field = this.tree.fields.get(g.fieldId);

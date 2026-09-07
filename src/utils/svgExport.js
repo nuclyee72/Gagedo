@@ -105,6 +105,30 @@ export async function buildTreeSVG({ tree, renderer, store }) {
   bg.setAttribute("fill", resolveVar("--viewport-bg") || "#ffffff");
   svg.appendChild(bg);
 
+  // 필드(배경/테두리) — 화면에서는 fields-layer가 lines-layer보다 아래에 있어 관계선이 항상 필드
+  // 배경 위로 보인다. 여기서도 그 순서를 맞추려면 필드를 관계선(SVG)보다 먼저 그려야 하는데,
+  // 필드는 CSS로 그려지는 HTML이라 별도의 foreignObject로 분리해 linesGroup보다 앞에 둔다
+  // (인물 카드/텍스트박스와 같은 foreignObject에 넣으면 그 foreignObject 전체가 관계선 뒤에
+  // 있어야 하는 인물 카드까지 관계선 밑으로 깔아버리므로 안 된다 — 필드만 따로 떼어낸다).
+  const fieldsFo = document.createElementNS(SVG_NS, "foreignObject");
+  fieldsFo.setAttribute("x", "0");
+  fieldsFo.setAttribute("y", "0");
+  fieldsFo.setAttribute("width", String(width));
+  fieldsFo.setAttribute("height", String(height));
+  const fieldsHost = document.createElementNS(XHTML_NS, "div");
+  fieldsHost.setAttribute("style", "position:relative; width:100%; height:100%;");
+  for (const field of tree.fields.values()) {
+    const el = createFieldElement(field);
+    el.querySelector(".field-resize")?.remove(); // 조작용 손잡이는 정적 이미지에 필요 없음
+    el.querySelector(".field-resize-tl")?.remove();
+    for (const slot of field.templateSlots) el.appendChild(createSlotElement(slot));
+    el.style.left = `${field.x - minX}px`;
+    el.style.top = `${field.y - minY}px`;
+    fieldsHost.appendChild(el);
+  }
+  fieldsFo.appendChild(fieldsHost);
+  svg.appendChild(fieldsFo);
+
   // 관계선 — 라이브 렌더러가 이미 정확히 그려둔 걸 그대로 복제한다(라벨 즉석편집용 보이지 않는
   // 클릭 영역, 지금 선택된 상태 표시는 정적 이미지에 필요 없으니 제거).
   const linesGroup = document.createElementNS(SVG_NS, "g");
@@ -117,7 +141,7 @@ export async function buildTreeSVG({ tree, renderer, store }) {
   }
   svg.appendChild(linesGroup);
 
-  // 인물 카드 + 텍스트 박스 — 하나의 foreignObject 안에 실제 DOM을 그대로 담는다.
+  // 인물 카드 + 텍스트 박스 — 하나의 foreignObject 안에 실제 DOM을 그대로 담는다(관계선보다 위).
   const fo = document.createElementNS(SVG_NS, "foreignObject");
   fo.setAttribute("x", "0");
   fo.setAttribute("y", "0");
@@ -125,17 +149,6 @@ export async function buildTreeSVG({ tree, renderer, store }) {
   fo.setAttribute("height", String(height));
   const host = document.createElementNS(XHTML_NS, "div");
   host.setAttribute("style", "position:relative; width:100%; height:100%;");
-
-  // 필드는 "그 위에 인물이 올라가는" 배경이므로 인물/텍스트박스보다 먼저(z-order상 가장 아래) 담는다.
-  for (const field of tree.fields.values()) {
-    const el = createFieldElement(field);
-    el.querySelector(".field-resize")?.remove(); // 조작용 손잡이는 정적 이미지에 필요 없음
-    el.querySelector(".field-resize-tl")?.remove();
-    for (const slot of field.templateSlots) el.appendChild(createSlotElement(slot));
-    el.style.left = `${field.x - minX}px`;
-    el.style.top = `${field.y - minY}px`;
-    host.appendChild(el);
-  }
 
   const defaultAvatar = await fetchDefaultAvatarDataUrl();
   for (const person of tree.people.values()) {

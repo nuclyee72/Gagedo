@@ -348,7 +348,12 @@ export class TreeRenderer {
     }
     // 그룹 멤버 전원의 id — anchor 스냅 계산에서 "나와 같이 끌려가는 멤버"를 후보에서 빼는 데 쓴다.
     const memberIds = new Set(positions.keys());
-    this._groupDragState = { positions, dx: 0, dy: 0, anchorId, anchorType, lockedEls, affectedLineIds, memberIds };
+    // lastAppliedDx/Dy: 그룹 안에 필드가 있을 때 "필드끼리 겹치지 않게" 충돌을 검사하는 기준
+    // (마지막으로 실제 적용됐던, 즉 안 겹쳤던 델타) — _updateGroupDrag가 매 프레임 갱신한다.
+    this._groupDragState = {
+      positions, dx: 0, dy: 0, anchorId, anchorType, lockedEls, affectedLineIds, memberIds,
+      lastAppliedDx: 0, lastAppliedDy: 0,
+    };
   }
 
   _updateGroupDrag(dxWorld, dyWorld) {
@@ -380,6 +385,48 @@ export class TreeRenderer {
         snapDx = snapped.x - rawX;
         snapDy = snapped.y - rawY;
       }
+    } else if (g.anchorType === "field" && anchorStart) {
+      const anchorField = this.tree.fields.get(g.anchorId);
+      if (anchorField) {
+        const rawX = anchorStart.x + g.dx;
+        const rawY = anchorStart.y + g.dy;
+        snapped = this._computeFieldSnap(rawX, rawY, anchorField, g.memberIds);
+        snapDx = snapped.x - rawX;
+        snapDy = snapped.y - rawY;
+      }
+    }
+
+    // 그룹 안에 필드가 하나라도 있으면 "필드끼리 겹치지 않게" 충돌도 검사한다 — 그룹 전체가
+    // 하나의 강체처럼 같은 델타로 움직이므로, 그중 필드 멤버 하나라도 그룹 밖의 다른 필드와
+    // 겹치면 (개별이 아니라) 그룹 전체의 이동을 같은 방식(축 슬라이드 또는 완전 정지)으로
+    // 제한한다 — _updateFieldDrag(단독 필드 드래그)와 같은 원칙.
+    const fieldMembers = [...g.positions].filter(([, s]) => s.type === "field");
+    if (fieldMembers.length) {
+      const memberFieldIds = new Set(fieldMembers.map(([id]) => id));
+      const collidesAt = (dx, dy) => fieldMembers.some(([id, start]) => {
+        const f = this.tree.fields.get(id);
+        return f && this._fieldRectCollides(f.width, f.height, start.x + dx, start.y + dy, memberFieldIds);
+      });
+      let combinedDx = g.dx + snapDx;
+      let combinedDy = g.dy + snapDy;
+      if (collidesAt(combinedDx, combinedDy)) {
+        const xOk = !collidesAt(combinedDx, g.lastAppliedDy);
+        const yOk = !collidesAt(g.lastAppliedDx, combinedDy);
+        if (xOk && !yOk) combinedDy = g.lastAppliedDy;
+        else if (yOk && !xOk) combinedDx = g.lastAppliedDx;
+        else { combinedDx = g.lastAppliedDx; combinedDy = g.lastAppliedDy; }
+        // 부분적으로만 막혔을 때도 ㄱ자 안내선은 어느 축 것인지 안전하게 못 나누므로 통째로
+        // 지운다(_updateFieldDrag와 같은 이유) — 단순 정렬선만 막힌 축을 null로 지운다.
+        if (snapped) {
+          if (combinedDy !== g.dy + snapDy) snapped.guideY = null;
+          if (combinedDx !== g.dx + snapDx) snapped.guideX = null;
+          if (combinedDx !== g.dx + snapDx || combinedDy !== g.dy + snapDy) snapped.extraGuides = [];
+        }
+      }
+      snapDx = combinedDx - g.dx;
+      snapDy = combinedDy - g.dy;
+      g.lastAppliedDx = combinedDx;
+      g.lastAppliedDy = combinedDy;
     }
 
     // 모델 좌표만 갱신한다(가벼움) — 실제 DOM 반영(카드/텍스트박스 위치 + 영향받는 관계선 다시
@@ -1114,6 +1161,19 @@ export class TreeRenderer {
     return false;
   }
 
+  /** (x,y,width,height) 사각형이 excludeIds에 없는 다른 필드 중 하나와라도 겹치면 true —
+   * "필드끼리 겹치지 않게" 드래그 중 충돌 판정에 쓰는 축 정렬 사각형(AABB) 겹침 검사. 경계선이
+   * 딱 맞닿기만 한 경우(끝점이 같음)는 겹친 것으로 안 쳐서 필드끼리 서로 붙여둘 수 있게 한다. */
+  _fieldRectCollides(width, height, x, y, excludeIds) {
+    for (const other of this.tree.fields.values()) {
+      if (excludeIds.has(other.id)) continue;
+      const overlapX = x < other.x + other.width && x + width > other.x;
+      const overlapY = y < other.y + other.height && y + height > other.y;
+      if (overlapX && overlapY) return true;
+    }
+    return false;
+  }
+
   /** 필드 자신을 드래그로 옮길 때 — 그 순간 사각형 안의 인물/텍스트박스를 기하학적으로
    * 쓸어담아 함께 옮긴다("위에 올라가 있는 오브젝트는 필드 이동 시 같이 움직임"). 마키 다중선택
    * 그룹 드래그(_beginGroupDrag, 소속이 미리 골라둔 this.multiSelected에서 옴)와는 전제가 달라
@@ -1155,19 +1215,46 @@ export class TreeRenderer {
     g.dy += dyWorld;
     const field = this.tree.fields.get(g.fieldId);
     if (field) {
-      field.x = g.startX + g.dx;
-      field.y = g.startY + g.dy;
-    }
-    for (const [id, start] of g.positions) {
-      const nx = start.x + g.dx;
-      const ny = start.y + g.dy;
-      if (start.type === "person") {
-        const p = this.tree.people.get(id);
-        if (p) { p.x = nx; p.y = ny; }
-      } else {
-        const b = this.tree.textBoxes.get(id);
-        if (b) { b.x = nx; b.y = ny; }
+      const excludeIds = new Set([g.fieldId]);
+      const rawX = g.startX + g.dx;
+      const rawY = g.startY + g.dy;
+      // 필드도 텍스트박스처럼 다른 필드와 정렬 클리핑된다("텍스트박스처럼 클리핑되게").
+      const snapped = this._computeFieldSnap(rawX, rawY, field, excludeIds);
+      let nx = snapped.x, ny = snapped.y;
+      let guideX = snapped.guideX, guideY = snapped.guideY, extraGuides = snapped.extraGuides;
+      // "필드끼리 겹치지 않게, 부딪히면 이동 불가능" — 스냅된 자리가 다른 필드와 겹치면, 축이
+      // 하나만 문제라면 그 축만 이전(마지막으로 실제 적용됐던, 즉 안 겹쳤던) 위치로 되돌려
+      // 벽을 따라 미끄러지는 것처럼 보이게 하고, 둘 다(또는 대각선 모서리만) 걸리면 아예 그
+      // 자리에서 멈춘다. field.x/y는 항상 "마지막으로 성공한(안 겹친) 위치"라는 불변식을
+      // 유지하므로 그대로 되돌림 기준으로 쓸 수 있다.
+      if (this._fieldRectCollides(field.width, field.height, nx, ny, excludeIds)) {
+        const xOk = !this._fieldRectCollides(field.width, field.height, nx, field.y, excludeIds);
+        const yOk = !this._fieldRectCollides(field.width, field.height, field.x, ny, excludeIds);
+        // 부분적으로만 막혔을 때 "ㄱ자 꺾은선" 안내선(extraGuides)은 어느 축 것인지 안전하게
+        // 나눠 걸러내기 애매하므로(가로/세로 두 토막이 한 축의 스냅을 같이 나타냄), 막힌 경우엔
+        // 단순 정렬선(guideX/guideY)만 남기고 이 안내선은 통째로 지운다.
+        if (xOk && !yOk) { ny = field.y; guideY = null; extraGuides = []; }
+        else if (yOk && !xOk) { nx = field.x; guideX = null; extraGuides = []; }
+        else { nx = field.x; ny = field.y; guideX = null; guideY = null; extraGuides = []; }
       }
+      const effDx = nx - g.startX;
+      const effDy = ny - g.startY;
+      field.x = nx;
+      field.y = ny;
+      for (const [id, start] of g.positions) {
+        const px = start.x + effDx;
+        const py = start.y + effDy;
+        if (start.type === "person") {
+          const p = this.tree.people.get(id);
+          if (p) { p.x = px; p.y = py; }
+        } else {
+          const b = this.tree.textBoxes.get(id);
+          if (b) { b.x = px; b.y = py; }
+        }
+      }
+      this._setGuide("h", guideY);
+      this._setGuide("v", guideX);
+      this._setExtraGuides(extraGuides);
     }
     this._scheduleFieldVisualUpdate();
   }
@@ -1211,6 +1298,7 @@ export class TreeRenderer {
       cancelAnimationFrame(this._fieldMoveRaf);
       this._fieldMoveRaf = null;
     }
+    this._hideSnapGuides();
     for (const el of g.lockedEls) el?.classList.remove("drag-locked-preview");
     if (droppedOnTrash) {
       this.tree.removeField(g.fieldId);
@@ -1691,6 +1779,88 @@ export class TreeRenderer {
 
     // anchor가 있는 스냅("일정 거리")은 사람 카드의 family/template 후보와 같은 방식으로 ㄱ자
     // 꺾은선 두 토막으로 보여준다(대각선으로 바로 잇지 않음 — 의미 없는 사선이라 헷갈림).
+    const extraGuides = [];
+    const myFinalCenterX = x + w / 2;
+    const myFinalCenterY = y + h / 2;
+    if (bestXAnchor) {
+      extraGuides.push({ x1: bestXAnchor.x, y1: bestXAnchor.y, x2: myFinalCenterX, y2: bestXAnchor.y });
+      extraGuides.push({ x1: myFinalCenterX, y1: bestXAnchor.y, x2: myFinalCenterX, y2: myFinalCenterY });
+    }
+    if (bestYAnchor && (!bestXAnchor || bestYAnchor.x !== bestXAnchor.x || bestYAnchor.y !== bestXAnchor.y)) {
+      extraGuides.push({ x1: bestYAnchor.x, y1: bestYAnchor.y, x2: bestYAnchor.x, y2: myFinalCenterY });
+      extraGuides.push({ x1: bestYAnchor.x, y1: myFinalCenterY, x2: myFinalCenterX, y2: myFinalCenterY });
+    }
+
+    return { x, y, guideX, guideY, extraGuides };
+  }
+
+  /** 필드를 옮길 때 다른 필드와 "클리핑"(정렬 스냅)되게 한다 — _computeTextBoxSnap과 완전히
+   * 같은 원칙(같은 종류의 기준선끼리: 왼쪽↔왼쪽/오른쪽↔오른쪽/가로 중간↔가로 중간, 위/아래/
+   * 세로 중간도 마찬가지 + 표준 칸 간격 스냅)을 필드끼리에 그대로 적용한다. 텍스트박스와
+   * 필드는 서로 다른 컬렉션이라 비교 대상은 "다른 필드"로만 한정한다(텍스트박스가 자기
+   * 자신끼리만 비교하는 것과 같은 원칙). excludeIds: 그룹 드래그 중 같이 끌려가는 다른
+   * 필드(계속 상대 위치가 고정이라 후보로 부적절)는 제외. */
+  _computeFieldSnap(rawX, rawY, field, excludeIds = null) {
+    const threshold = SNAP_THRESHOLD_PX / this.camera.scale;
+    const w = field.width;
+    const h = field.height;
+
+    let bestX = null, bestXDist = threshold, guideX = null, bestXAnchor = null;
+    let bestY = null, bestYDist = threshold, guideY = null, bestYAnchor = null;
+
+    const myXs = [rawX, rawX + w, rawX + w / 2];
+    const myYs = [rawY, rawY + h, rawY + h / 2];
+    const myCenterX = rawX + w / 2;
+    const myCenterY = rawY + h / 2;
+
+    for (const other of this.tree.fields.values()) {
+      if (other.id === field.id || excludeIds?.has(other.id)) continue;
+      const theirXs = [other.x, other.x + other.width, other.x + other.width / 2];
+      const theirYs = [other.y, other.y + other.height, other.y + other.height / 2];
+
+      for (let i = 0; i < 3; i++) {
+        const dx = theirXs[i] - myXs[i];
+        if (Math.abs(dx) < bestXDist) {
+          bestXDist = Math.abs(dx);
+          bestX = rawX + dx;
+          guideX = theirXs[i];
+          bestXAnchor = null;
+        }
+        const dy = theirYs[i] - myYs[i];
+        if (Math.abs(dy) < bestYDist) {
+          bestYDist = Math.abs(dy);
+          bestY = rawY + dy;
+          guideY = theirYs[i];
+          bestYAnchor = null;
+        }
+      }
+
+      const theirCenterX = other.x + other.width / 2;
+      const theirCenterY = other.y + other.height / 2;
+      const anchor = { x: theirCenterX, y: theirCenterY };
+      for (const targetCenterX of [theirCenterX + COL_SPACING, theirCenterX - COL_SPACING]) {
+        const dx = targetCenterX - myCenterX;
+        if (Math.abs(dx) < bestXDist) {
+          bestXDist = Math.abs(dx);
+          bestX = rawX + dx;
+          guideX = null;
+          bestXAnchor = anchor;
+        }
+      }
+      for (const targetCenterY of [theirCenterY + ROW_SPACING, theirCenterY - ROW_SPACING]) {
+        const dy = targetCenterY - myCenterY;
+        if (Math.abs(dy) < bestYDist) {
+          bestYDist = Math.abs(dy);
+          bestY = rawY + dy;
+          guideY = null;
+          bestYAnchor = anchor;
+        }
+      }
+    }
+
+    const x = bestX !== null ? bestX : rawX;
+    const y = bestY !== null ? bestY : rawY;
+
     const extraGuides = [];
     const myFinalCenterX = x + w / 2;
     const myFinalCenterY = y + h / 2;

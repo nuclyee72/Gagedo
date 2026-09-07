@@ -847,30 +847,33 @@ export class InspectorPanel {
         <span>필드 위치 잠금</span>
         <button type="button" class="field-self-lock-btn" title="켜면 이 필드 자신을 드래그(단독/마키 모두)로 못 옮겨요">🔓</button>
       </label>
-      <label>배경색</label>
-      <div class="field-bg-swatches rel-color-swatches">
-        ${COLOR_PRESETS.map((c) => `<button type="button" class="rel-color-swatch" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("")}
-      </div>
-      <div class="rel-color-custom-row">
-        <input type="color" class="field-bg-color" title="직접 고르기">
-        <button type="button" class="field-bg-reset">기본값</button>
-      </div>
-      <label>테두리색</label>
-      <div class="field-border-swatches rel-color-swatches">
-        ${COLOR_PRESETS.map((c) => `<button type="button" class="rel-color-swatch" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("")}
-      </div>
-      <div class="rel-color-custom-row">
-        <input type="color" class="field-border-color" title="직접 고르기">
-        <button type="button" class="field-border-reset">기본값</button>
-      </div>
-      <label>테두리 굵기 <span class="field-border-width-value"></span>
-        <input type="range" class="field-border-width" min="0" max="10" step="1">
-      </label>
-      <label>테두리 모양
-        <select class="field-borderstyle">
-          ${Object.entries(LINE_STYLE_PRESETS).map(([key, { label }]) => `<option value="${key}">${label}</option>`).join("")}
-        </select>
-      </label>
+      <details class="p-attr-section">
+        <summary><span class="p-attr-arrow">▸</span> 속성</summary>
+        <label>배경색</label>
+        <div class="field-bg-swatches rel-color-swatches">
+          ${COLOR_PRESETS.map((c) => `<button type="button" class="rel-color-swatch" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("")}
+        </div>
+        <div class="rel-color-custom-row">
+          <input type="color" class="field-bg-color" title="직접 고르기">
+          <button type="button" class="field-bg-reset">기본값</button>
+        </div>
+        <label>테두리색</label>
+        <div class="field-border-swatches rel-color-swatches">
+          ${COLOR_PRESETS.map((c) => `<button type="button" class="rel-color-swatch" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("")}
+        </div>
+        <div class="rel-color-custom-row">
+          <input type="color" class="field-border-color" title="직접 고르기">
+          <button type="button" class="field-border-reset">기본값</button>
+        </div>
+        <label>테두리 굵기 <span class="field-border-width-value"></span>
+          <input type="range" class="field-border-width" min="0" max="10" step="1">
+        </label>
+        <label>테두리 모양
+          <select class="field-borderstyle">
+            ${Object.entries(LINE_STYLE_PRESETS).map(([key, { label }]) => `<option value="${key}">${label}</option>`).join("")}
+          </select>
+        </label>
+      </details>
       <button type="button" class="field-delete">이 필드 삭제</button>
     `;
 
